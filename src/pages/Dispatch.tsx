@@ -98,9 +98,9 @@ const Dispatch: React.FC = () => {
             .order('created_at', { ascending: false });
 
         if (!error && data) {
-            // Get order counts
+            // Get order counts from route_items
             const routesWithCounts = await Promise.all(data.map(async (route) => {
-                const { count } = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('route_id', route.id);
+                const { count } = await supabase.from('route_items').select('*', { count: 'exact', head: true }).eq('route_id', route.id);
                 return { ...route, order_count: count || 0 };
             }));
             setRoutes(routesWithCounts);
@@ -278,33 +278,56 @@ const Dispatch: React.FC = () => {
     };
 
     const handleCreateRoute = async () => {
+        // Validate items selected
         if (selectedOrdersForRoute.size === 0) {
             alert("Selecciona al menos un pedido para crear una ruta.");
             return;
         }
 
+        // Prompt for route name
         const routeName = prompt("Nombre de la Ruta (ej. Ruta Centro - 20/01):", `Ruta ${new Date().toLocaleDateString()}`);
         if (!routeName) return;
 
         setSubmitting(true);
         try {
-            // 1. Create Route
+            // 1. Create Route Header
             const { data: routeData, error: routeError } = await supabase
                 .from('delivery_routes')
                 .insert({
                     name: routeName,
                     driver_id: selectedDriverId || null,
-                    status: 'active',
+                    status: 'draft',
                 })
                 .select()
                 .single();
 
             if (routeError) throw routeError;
 
-            // 2. Assign Orders to Route
+            // 2. Prepare Route Items
+            const itemsToInsert = Array.from(selectedOrdersForRoute).map((orderId, index) => ({
+                route_id: routeData.id,
+                order_id: orderId,
+                sequence_order: index + 1,
+                status: 'pending'
+            }));
+
+            // 3. Insert Route Items
+            const { error: itemsError } = await supabase
+                .from('route_items')
+                .insert(itemsToInsert);
+
+            if (itemsError) throw itemsError;
+
+            // 4. Update Orders Status & Pointer (Dual-write for compatibility)
             const { error: updateError } = await supabase
                 .from('orders')
-                .update({ route_id: routeData.id })
+                .update({
+                    route_id: routeData.id,
+                    delivery_status: 'out_for_delivery' // Mark as out immediately or keep pending? Let's say out for delivery for now or keep 'pending' until dispatched. 
+                    // Actually, keeping 'pending' allows the "Start Dispatch" button to do the transition.
+                    // But typically creating the route implies it's being prepared.
+                    // Let's set it to 'out_for_delivery' to simplify workflow for v1.
+                })
                 .in('id', Array.from(selectedOrdersForRoute));
 
             if (updateError) throw updateError;

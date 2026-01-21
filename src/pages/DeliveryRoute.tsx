@@ -169,6 +169,18 @@ const DeliveryRoute: React.FC = () => {
 
             if (updateError) throw updateError;
 
+            // 2b. Update Route Item Status (Dual-write)
+            const { error: itemError } = await supabase
+                .from('route_items')
+                .update({
+                    status: 'delivered',
+                    delivered_at: new Date().toISOString(),
+                    proof_photo_url: publicUrl
+                })
+                .eq('order_id', selectedOrder.id);
+
+            if (itemError) console.warn("Could not update route_item status:", itemError);
+
             // 3. Trigger Email Notification (Non-blocking)
             supabase.functions.invoke('send-delivery-notification', {
                 body: { order_id: selectedOrder.id }
