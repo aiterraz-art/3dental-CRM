@@ -64,7 +64,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                 .insert({
                                     id: session.user.id,
                                     email: session.user.email,
-                                    role: 'vendedor', // Default role
+                                    role: 'seller', // Default role
                                     status: 'pending', // Default status
                                     full_name: session.user.user_metadata?.full_name || ''
                                 })
@@ -80,7 +80,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                 setProfile({
                                     id: session.user.id,
                                     email: session.user.email,
-                                    role: 'vendedor',
+                                    role: 'seller',
                                     status: 'pending', // FORCE PENDING on fallback to prevent unauthorized access
                                     zone: null
                                 } as any as Profile);
@@ -143,7 +143,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             'dcarvajal@3dental.cl': {
                 id: '11111111-1111-1111-1111-111111111111', // Valid UUID format
                 email: 'dcarvajal@3dental.cl',
-                role: 'vendedor',
+                role: 'seller',
                 created_at: new Date().toISOString(),
                 full_name: 'Daniela Carvajal',
                 zone: 'Santiago Centro'
@@ -151,7 +151,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             'nrigual@3dental.cl': {
                 id: '22222222-2222-2222-2222-222222222222', // Valid UUID format
                 email: 'nrigual@3dental.cl',
-                role: 'vendedor',
+                role: 'seller',
                 created_at: new Date().toISOString(),
                 full_name: 'Natalia Rigual',
                 zone: 'Las Condes'

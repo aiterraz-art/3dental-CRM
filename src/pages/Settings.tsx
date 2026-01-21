@@ -42,7 +42,7 @@ const Settings: React.FC = () => {
             return;
         }
         setEditingId(user.id);
-        setTempRole(user.role || 'user');
+        setTempRole(user.role || 'seller');
         setTempStatus(user.status || 'pending');
     };
 
@@ -147,7 +147,7 @@ const Settings: React.FC = () => {
                                                 </select>
                                             ) : (
                                                 <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase
-                          ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                          ${user.role === 'admin' || user.role === 'manager' ? 'bg-purple-100 text-purple-700' :
                                                         user.role === 'driver' ? 'bg-amber-100 text-amber-700' :
                                                             user.role === 'seller' ? 'bg-green-100 text-green-700' :
                                                                 'bg-gray-100 text-gray-600'}`}>

@@ -691,7 +691,7 @@ const Dashboard = () => {
                                                     <div>
                                                         <p className="text-sm font-bold text-gray-900">{seller.name}</p>
                                                         <p className="text-[10px] text-gray-400 font-bold uppercase">
-                                                            {seller.role === 'admin' || seller.role === 'supervisor' ? 'Administrador' : 'Representante'}
+                                                            {seller.role === 'admin' || seller.role === 'supervisor' || seller.role === 'manager' ? 'Administrador' : 'Representante'}
                                                         </p>
                                                     </div>
                                                 </div>
