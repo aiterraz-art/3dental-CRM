@@ -81,6 +81,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                     id: session.user.id,
                                     email: session.user.email,
                                     role: 'vendedor',
+                                    status: 'pending', // FORCE PENDING on fallback to prevent unauthorized access
                                     zone: null
                                 } as any as Profile);
                             }
