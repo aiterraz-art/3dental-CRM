@@ -76,12 +76,14 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                 setProfile(newProfile[0] as any as Profile);
                             } else {
                                 console.warn("UserContext: Failed to create profile, using fallback dummy.");
-                                // If everything fails, set a dummy profile using session data so UI doesn't break
+                                // If everything fails, set a dummy profile.
+                                // EMERGENCY BYPASS: Always allow super admin even if DB fails
+                                const isSuperAdmin = session.user.email === 'aterraza@3dental.cl';
                                 setProfile({
                                     id: session.user.id,
                                     email: session.user.email,
-                                    role: 'seller',
-                                    status: 'pending', // FORCE PENDING on fallback to prevent unauthorized access
+                                    role: isSuperAdmin ? 'manager' : 'seller',
+                                    status: isSuperAdmin ? 'active' : 'pending',
                                     zone: null
                                 } as any as Profile);
                             }
