@@ -92,28 +92,38 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             console.log("UserContext: Profile found in CRM schema");
                             setProfile(crmData[0] as any as Profile);
                         } else {
-                            console.log("UserContext: Creating new profile...");
-                            // Profile doesn't exist, create it in crm schema
-                            const { data: newProfile, error: createError } = await (supabase
+                            console.log("UserContext: Creating new profile in BOTH schemas...");
+                            // Profile doesn't exist, create it in BOTH crm and public schemas for safety
+                            const profileData = {
+                                id: session.user.id,
+                                email: session.user.email,
+                                role: 'seller', // Default role
+                                status: 'pending', // Default status
+                                full_name: session.user.user_metadata?.full_name || ''
+                            };
+
+                            // 1. Try CRM schema
+                            const { data: crmNew, error: crmErr } = await (supabase
                                 .schema('crm')
                                 .from('profiles') as any)
-                                .insert({
-                                    id: session.user.id,
-                                    email: session.user.email,
-                                    role: 'seller', // Default role
-                                    status: 'pending', // Default status
-                                    full_name: session.user.user_metadata?.full_name || ''
-                                })
+                                .insert(profileData)
                                 .select();
 
-                            if (createError) console.error("UserContext: Error creating profile", createError);
+                            // 2. Try Public schema (Redundant but safe for visibility)
+                            const { data: pubNew, error: pubErr } = await supabase
+                                .from('profiles')
+                                .insert(profileData)
+                                .select();
 
-                            if (newProfile && newProfile.length > 0) {
-                                setProfile(newProfile[0] as any as Profile);
+                            if (crmErr && pubErr) console.error("UserContext: ALL profile creation attempts failed", { crmErr, pubErr });
+
+                            if (crmNew && crmNew.length > 0) {
+                                setProfile(crmNew[0] as any as Profile);
+                            } else if (pubNew && pubNew.length > 0) {
+                                setProfile(pubNew[0] as any as Profile);
                             } else {
-                                console.warn("UserContext: Failed to create profile, using fallback dummy.");
-                                // If everything fails, set a dummy profile.
-                                // EMERGENCY BYPASS: Always allow super admin even if DB fails
+                                console.warn("UserContext: Failed to create profiles, using fallback dummy.");
+                                // EMERGENCY BYPASS: Always allow super admin
                                 const isSuperAdmin = session.user.email === 'aterraza@3dental.cl';
                                 setProfile({
                                     id: session.user.id,
