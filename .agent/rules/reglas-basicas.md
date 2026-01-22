@@ -91,11 +91,14 @@ RESTRICCIONES ABSOLUTAS
 - No generar código incompleto
 - No sacrificar calidad por rapidez
 - No desviarse del idioma español
-- **RESTRICCIÓN ABSOLUTA E INQUEBRANTABLE: PROHIBIDO ejecutar `git push` o cualquier despliegue a GitHub/Vercel/Staging sin autorización EXPLÍCITA, ESPECÍFICA y PREVIA del usuario para ESA acción en particular.**
+- **RESTRICCIÓN SUPREMA E INQUEBRANTABLE: PROHIBIDO ejecutar `git push`, `npm deploy`, `vercel deploy` o cualquier comando que altere el estado remoto sin la palabra exacta "AUTORIZO PUSH" o similar, proporcionada por el usuario para ESA ACCIÓN ESPECÍFICA.**
+- **PROHIBIDO encadenar `git push` con otros comandos (ej. `git commit && git push`) a menos que el usuario lo pida explícitamente.**
+- **PROHIBIDO asumir que una orden previa de "subir cambios" aplica a tareas posteriores realizadas en la misma sesión.**
 
 GESTIÓN DE ENTORNOS Y DESPLIEGUE
 - El desarrollo se realiza SÓLO en el entorno local.
 - Los cambios deben validarse localmente antes de cualquier consideración de despliegue.
-- La versión estable en GitHub/Vercel es INTOCABLE hasta que el usuario indique explícitamente "Desplegar a producción" o similar.
-- En caso de duda sobre la estabilidad, se debe priorizar la permanencia en el entorno local.
-- Ante errores críticos en local, se debe revertir o corregir localmente sin afectar el repositorio remoto.
+- La versión estable en GitHub/Vercel es SAGRADA. Cualquier "push" es considerado una acción de alto riesgo.
+- El agente DEBE preguntar explícitamente al terminar cada tarea: "¿Deseas que suba estos cambios específicos a GitHub?".
+- Nunca realizar acciones de "limpieza" o "sincronización" con el remoto (`git pull`, `git fetch`, `git push --force`) sin aviso previo y aprobación.
+- Ante la mínima duda sobre la autorización, el agente DEBE abstenerse de tocar el repositorio remoto.

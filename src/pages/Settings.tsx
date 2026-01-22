@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { useUser } from '../contexts/UserContext';
-import { Shield, User, Search, CheckCircle, Ban, Edit, Save, AlertTriangle } from 'lucide-react';
+import { Shield, User, Search, CheckCircle, Ban, Edit, Save, AlertTriangle, Trash2 } from 'lucide-react';
 import { Profile } from '../contexts/UserContext';
 
 const Settings: React.FC = () => {
@@ -270,6 +270,40 @@ const Settings: React.FC = () => {
         }
     };
 
+    const handleDeleteUser = async (id: string, email: string) => {
+        if (email === 'aterraza@3dental.cl') {
+            alert("No es posible eliminar al Super Administrador.");
+            return;
+        }
+
+        if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente a ${email}? Esta acción no se puede deshacer y el usuario perderá el acceso de inmediato.`)) {
+            return;
+        }
+
+        try {
+            // 1. Delete from crm schema
+            const { error: crmErr } = await (supabase
+                .schema('crm')
+                .from('profiles') as any)
+                .delete()
+                .eq('id', id);
+
+            // 2. Delete from public schema
+            const { error: pubErr } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', id);
+
+            if (crmErr && pubErr) throw crmErr || pubErr;
+
+            alert('Usuario eliminado correctamente.');
+            fetchUsers();
+        } catch (error: any) {
+            console.error('Error deleting user:', error);
+            alert('Error al eliminar: ' + error.message);
+        }
+    };
+
     if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
@@ -425,13 +459,23 @@ const Settings: React.FC = () => {
                                                         </button>
                                                     </div>
                                                 ) : (
-                                                    <button
-                                                        onClick={() => handleEdit(user)}
-                                                        disabled={user.email === 'aterraza@3dental.cl'}
-                                                        className="text-indigo-600 hover:text-indigo-800 font-black text-xs uppercase tracking-widest flex items-center justify-end w-full gap-2 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                                                    >
-                                                        <Edit size={14} /> Editar Perfil
-                                                    </button>
+                                                    <div className="flex justify-end items-center gap-4">
+                                                        <button
+                                                            onClick={() => handleDeleteUser(user.id, user.email || '')}
+                                                            disabled={user.email === 'aterraza@3dental.cl'}
+                                                            className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all disabled:opacity-0 disabled:pointer-events-none"
+                                                            title="Eliminar Usuario"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleEdit(user)}
+                                                            disabled={user.email === 'aterraza@3dental.cl'}
+                                                            className="text-indigo-600 hover:text-indigo-800 font-black text-xs uppercase tracking-widest flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                                        >
+                                                            <Edit size={14} /> Editar Perfil
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>
