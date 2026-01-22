@@ -56,7 +56,8 @@ const DeliveryRoute: React.FC = () => {
             }
 
             // Expose for debug
-            (window as any)._debugRoutes = myRoutes;
+            // Expose for debug
+            // (window as any)._debugRoutes = myRoutes;
 
             if (!myRoutes || myRoutes.length === 0) {
                 setOrders([]);
@@ -108,7 +109,8 @@ const DeliveryRoute: React.FC = () => {
             }).filter(Boolean); // Remove nulls
 
             setOrders(mappedOrders);
-            (window as any)._debugItems = data; // Raw items for debug
+            setOrders(mappedOrders);
+            // (window as any)._debugItems = data; // REMOVED
 
         } catch (err: any) {
             console.error("Error fetching route:", err);
@@ -357,6 +359,7 @@ const DeliveryRoute: React.FC = () => {
             )}
 
             {/* Delivery Modal */}
+            {/* Delivery Modal */}
             {selectedOrder && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
                     <div className="bg-white w-full sm:max-w-md h-[80vh] sm:h-auto rounded-t-3xl sm:rounded-3xl p-6 animate-in slide-in-from-bottom duration-300 flex flex-col">
@@ -407,19 +410,6 @@ const DeliveryRoute: React.FC = () => {
                     </div>
                 </div>
             )}
-            {/* DEBUG PANEL */}
-            <div className="m-4 p-4 bg-gray-100 rounded-2xl text-[10px] font-mono text-gray-600 overflow-x-auto border border-gray-300">
-                <p className="font-bold text-gray-900 mb-2">🔍 DEBUG INFO (Para Soporte)</p>
-                <p>Profile ID: {profile?.id}</p>
-                <p>Route Name: {routeName}</p>
-                <p>Raw Routes Found: {(window as any)._debugRoutes?.length || 0}</p>
-                <p>Orders Count: {orders.length}</p>
-                <p>Status: {loading ? 'LOADING' : 'READY'}</p>
-                <details>
-                    <summary className="cursor-pointer font-bold text-indigo-600 mt-2">Ver Raw Items (Full)</summary>
-                    <pre>{JSON.stringify((window as any)._debugItems || [], null, 2)}</pre>
-                </details>
-            </div>
         </div>
     );
 };
