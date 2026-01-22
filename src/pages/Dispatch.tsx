@@ -62,7 +62,7 @@ const Dispatch: React.FC = () => {
     const [selectedDriverId, setSelectedDriverId] = useState<string>("");
 
     // Route Details State
-    const [selectedRouteItems, setSelectedRouteItems] = useState<any[]>([]);
+    const [selectedRouteItems, setSelectedRouteItems] = useState<any[] | null>(null); // Null means loading
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [selectedRouteForDetails, setSelectedRouteForDetails] = useState<DeliveryRoute | null>(null);
     const [photoViewerUrl, setPhotoViewerUrl] = useState<string | null>(null);
@@ -128,6 +128,7 @@ const Dispatch: React.FC = () => {
             setSelectedRouteItems(data || []);
         } catch (err: any) {
             console.error("Error fetching route details:", err);
+            setSelectedRouteItems([]); // Ensure we exit loading state
             alert("No se pudieron cargar los detalles de la ruta: " + (err.message || "Error desconocido"));
         }
     };
@@ -905,8 +906,18 @@ const Dispatch: React.FC = () => {
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-8 bg-gray-50/50">
-                        {selectedRouteItems.length === 0 ? (
-                            <div className="text-center py-20 text-gray-400 font-bold">Cargando elementos de ruta...</div>
+                        {selectedRouteItems === null ? (
+                            <div className="text-center py-20">
+                                <div className="animate-spin w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Cargando pedidos de la ruta...</p>
+                            </div>
+                        ) : selectedRouteItems.length === 0 ? (
+                            <div className="text-center py-20 text-gray-400 space-y-4">
+                                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto text-gray-300">
+                                    <Truck size={32} />
+                                </div>
+                                <p className="font-bold uppercase tracking-widest text-xs">Esta ruta no tiene pedidos asignados</p>
+                            </div>
                         ) : (
                             <div className="space-y-4">
                                 {selectedRouteItems.map((item, idx) => (

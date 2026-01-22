@@ -192,6 +192,12 @@ const DeliveryRoute: React.FC = () => {
     };
 
     const validateGeofence = (order: any) => {
+        // [DEBUG] If debug mode is active, always allow
+        if (debugMode) {
+            console.log("Geofence bypassed (Debug Mode)");
+            return true;
+        }
+
         // If client has no coords, we can't validate, so allow.
         if (!order.client?.lat || !order.client?.lng) return true;
 
@@ -202,7 +208,7 @@ const DeliveryRoute: React.FC = () => {
 
         const dist = calculateDistance(userLocation.lat, userLocation.lng, order.client.lat, order.client.lng);
         if (dist > 500) {
-            alert(`⛔ Estás muy lejos del punto de entrega (${Math.round(dist)}m). Debes estar a menos de 500m.`);
+            alert(`⛔ Estás muy lejos del punto de entrega (${Math.round(dist)}m). Debes estar a menos de 500m. (Tip: Activa Modo Debug para omitir esto)`);
             return false;
         }
         return true;
