@@ -12,21 +12,14 @@ const Settings: React.FC = () => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'users' | 'permissions'>('users');
 
-    // Temporary state for editing users
     const [tempRole, setTempRole] = useState<string>('');
     const [tempStatus, setTempStatus] = useState<string>('');
-
     const [rolePerms, setRolePerms] = useState<Record<string, string[]>>({});
     const [savingPerms, setSavingPerms] = useState(false);
 
-    // Invitation State
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
     const [sendingInvite, setSendingInvite] = useState(false);
-    const [inviteData, setInviteData] = useState({
-        email: '',
-        full_name: '',
-        role: 'seller'
-    });
+    const [inviteData, setInviteData] = useState({ email: '', full_name: '', role: 'seller' });
 
     const roles = ['manager', 'jefe', 'administrativo', 'seller', 'driver'];
     const permissionList = [
@@ -53,7 +46,7 @@ const Settings: React.FC = () => {
 
     const fetchRolePermissions = async () => {
         const { data } = await supabase.from('role_permissions').select('*');
-        if (data) {
+        if (data && data.length > 0) {
             const matrix: Record<string, string[]> = {};
             data.forEach((p: any) => {
                 if (!matrix[p.role]) matrix[p.role] = [];
@@ -61,7 +54,6 @@ const Settings: React.FC = () => {
             });
             setRolePerms(matrix);
         } else {
-            // Fallback defaults if table empty
             setRolePerms({
                 'manager': permissionList.map(p => p.key),
                 'jefe': ['MANAGE_INVENTORY', 'VIEW_METAS', 'MANAGE_DISPATCH', 'VIEW_ALL_CLIENTS', 'VIEW_TEAM_STATS'],
@@ -73,39 +65,25 @@ const Settings: React.FC = () => {
     };
 
     const togglePermission = (role: string, perm: string) => {
-        if (role === 'manager' && perm === 'MANAGE_PERMISSIONS') return; // Prevent lockout
-
+        if (role === 'manager' && perm === 'MANAGE_PERMISSIONS') return;
         setRolePerms(prev => {
             const current = prev[role] || [];
-            if (current.includes(perm)) {
-                return { ...prev, [role]: current.filter(p => p !== perm) };
-            } else {
-                return { ...prev, [role]: [...current, perm] };
-            }
+            return current.includes(perm) ? { ...prev, [role]: current.filter(p => p !== perm) } : { ...prev, [role]: [...current, perm] };
         });
     };
 
     const savePermissions = async () => {
         setSavingPerms(true);
         try {
-            // DELETE ALL and RE-INSERT (Simple approach for small matrix)
-            // Note: In production we might want to do diffing
-            const { error: delError } = await supabase.from('role_permissions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-            if (delError) throw delError;
-
+            await supabase.from('role_permissions').delete().neq('role', 'none');
             const toInsert = [];
             for (const [role, perms] of Object.entries(rolePerms)) {
-                for (const permission of perms) {
-                    toInsert.push({ role, permission });
-                }
+                for (const permission of perms) toInsert.push({ role, permission });
             }
-
-            const { error: insError } = await supabase.from('role_permissions').insert(toInsert);
-            if (insError) throw insError;
-
-            alert('Matriz de permisos actualizada correctamente.');
+            const { error } = await supabase.from('role_permissions').insert(toInsert);
+            if (error) throw error;
+            alert('Matriz de permisos actualizada.');
         } catch (error: any) {
-            console.error('Error saving permissions:', error);
             alert('Error al guardar: ' + error.message);
         } finally {
             setSavingPerms(false);
@@ -115,35 +93,20 @@ const Settings: React.FC = () => {
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            // Fetch from public schema
-            const { data: publicData, error: publicError } = await supabase
-                .from('profiles')
-                .select('*')
-                .order('email');
+            const { data: publicData } = await supabase.from('profiles').select('*').order('email');
+            let crmData = [];
+            try {
+                const { data } = await (supabase.schema('crm').from('profiles') as any).select('*').order('email');
+                if (data) crmData = data;
+            } catch (e) { }
 
-            // Fetch from crm schema (Explicit fallback/sync)
-            const { data: crmData, error: crmError } = await (supabase
-                .schema('crm')
-                .from('profiles') as any)
-                .select('*')
-                .order('email');
-
-            if (publicError && crmError) {
-                console.error('Error fetching users from both schemas:', { publicError, crmError });
-            }
-
-            // Unify and deduplicate by ID
             const unifiedUsersMap = new Map<string, Profile>();
-
-            // Add public data first
             (publicData || []).forEach((u: any) => unifiedUsersMap.set(u.id, u as Profile));
-
-            // Overwrite/Add crm data (usually more up-to-date for management)
             (crmData || []).forEach((u: any) => unifiedUsersMap.set(u.id, u as Profile));
 
             setUsers(Array.from(unifiedUsersMap.values()).sort((a, b) => (a.email || '').localeCompare(b.email || '')));
         } catch (err) {
-            console.error('Unexpected error in fetchUsers:', err);
+            console.error('fetchUsers error:', err);
         } finally {
             setLoading(false);
         }
@@ -161,163 +124,78 @@ const Settings: React.FC = () => {
 
     const handleSave = async (id: string) => {
         try {
-            // Update in crm schema (Preferred for master record)
-            const { error: crmError } = await (supabase
-                .schema('crm')
-                .from('profiles') as any)
-                .update({ role: tempRole, status: tempStatus })
-                .eq('id', id);
+            const { error: pubError } = await supabase.from('profiles').update({ role: tempRole, status: tempStatus }).eq('id', id);
+            try {
+                await (supabase.schema('crm').from('profiles') as any).update({ role: tempRole, status: tempStatus }).eq('id', id);
+            } catch (e) { }
 
-            // Also try to update in public schema (for view cache)
-            const { error: publicError } = await supabase
-                .from('profiles')
-                .update({ role: tempRole, status: tempStatus })
-                .eq('id', id);
-
-            if (crmError && publicError) throw crmError || publicError;
-
-            alert('Usuario actualizado correctamente en el sistema.');
+            if (pubError) throw pubError;
+            alert('Usuario actualizado.');
             setEditingId(null);
             fetchUsers();
         } catch (error: any) {
-            alert('Error al actualizar: ' + error.message);
+            alert('Error: ' + error.message);
         }
     };
 
     const handleInviteUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inviteData.email || !inviteData.full_name) {
-            alert("Por favor completa todos los campos.");
-            return;
-        }
-
         setSendingInvite(true);
         try {
-            // 1. Create/Check Profile in crm.profiles
-            const { data: existing, error: checkErr } = await (supabase
-                .schema('crm')
-                .from('profiles') as any)
-                .select('id')
-                .eq('email', inviteData.email)
-                .maybeSingle();
-
+            const { data: existing } = await supabase.from('profiles').select('id').eq('email', inviteData.email).maybeSingle();
             if (existing) {
-                alert("Este usuario ya está registrado o invitado.");
-                setSendingInvite(false);
+                alert("Este usuario ya existe.");
                 return;
             }
 
-            // Create placeholder profile in CRM schema
-            const { data: newProfile, error: insError } = await (supabase
-                .schema('crm')
-                .from('profiles') as any)
-                .insert({
-                    id: crypto.randomUUID(), // Temporary ID until Google Login
-                    email: inviteData.email.toLowerCase(),
-                    full_name: inviteData.full_name,
-                    role: inviteData.role,
-                    status: 'active' // Pre-approved
-                })
-                .select();
+            const newId = crypto.randomUUID();
+            const profileData = { id: newId, email: inviteData.email.toLowerCase(), full_name: inviteData.full_name, role: inviteData.role, status: 'active' };
 
-            if (insError) throw insError;
+            const { error: pubErr } = await supabase.from('profiles').insert(profileData);
+            try {
+                await (supabase.schema('crm').from('profiles') as any).insert(profileData);
+            } catch (e) { }
 
-            // 2. Send Invitation Email via Gmail API
+            if (pubErr) throw pubErr;
+
             const { data: { session } } = await supabase.auth.getSession();
-            const providerToken = session?.provider_token;
-
-            if (!providerToken) {
-                alert('Invitación creada, pero el correo no pudo enviarse (No detectamos sesión de Google con permisos de envío).');
-            } else {
+            if (session?.provider_token) {
                 const subject = "Bienvenido a 3dental CRM 🏥";
-                const message = `Hola ${inviteData.full_name},\n\nSe te ha dado acceso al CRM de 3dental con el rol de ${inviteData.role.toUpperCase()}.\n\nYa puedes ingresar a la plataforma utilizando tu cuenta de Google en el siguiente enlace:\n\nhttps://3dental-crm.vercel.app/\n\nSaludos,\nEquipo 3dental`;
-
-                const rawMimeMessage = [
-                    `From: ${session.user.email}`,
-                    `To: ${inviteData.email}`,
-                    `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
-                    'MIME-Version: 1.0',
-                    'Content-Type: text/plain; charset="UTF-8"',
-                    'Content-Transfer-Encoding: 7bit',
-                    '',
-                    message
-                ].join('\r\n');
-
-                const encodedMessage = btoa(unescape(encodeURIComponent(rawMimeMessage)))
-                    .replace(/\+/g, '-')
-                    .replace(/\//g, '_')
-                    .replace(/=+$/, '');
-
-                await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${providerToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ raw: encodedMessage })
-                });
+                const message = `Hola ${inviteData.full_name},\n\nSe te ha dado acceso con el rol de ${inviteData.role.toUpperCase()}.\n\nEnlace: https://3dental-crm.vercel.app/`;
+                const rawMime = [`From: ${session.user.email}`, `To: ${inviteData.email}`, `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset="UTF-8"', '', message].join('\r\n');
+                const encoded = btoa(unescape(encodeURIComponent(rawMime))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { 'Authorization': `Bearer ${session.provider_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw: encoded }) });
             }
 
-            alert('Invitación enviada exitosamente.');
+            alert('Invitación enviada.');
             setIsInviteModalOpen(false);
             setInviteData({ email: '', full_name: '', role: 'seller' });
             fetchUsers();
         } catch (error: any) {
-            console.error('Error inviting user:', error);
-            alert('Error al invitar: ' + error.message);
+            alert('Error: ' + error.message);
         } finally {
             setSendingInvite(false);
         }
     };
 
     const handleDeleteUser = async (id: string, email: string) => {
-        if (email === 'aterraza@3dental.cl') {
-            alert("No es posible eliminar al Super Administrador.");
-            return;
-        }
-
-        if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente a ${email}? Esta acción no se puede deshacer y el usuario perderá el acceso de inmediato.`)) {
-            return;
-        }
-
+        if (email === 'aterraza@3dental.cl' || !window.confirm(`¿Eliminar a ${email}?`)) return;
         try {
-            // 1. Delete from crm schema
-            const { error: crmErr } = await (supabase
-                .schema('crm')
-                .from('profiles') as any)
-                .delete()
-                .eq('id', id);
-
-            // 2. Delete from public schema
-            const { error: pubErr } = await supabase
-                .from('profiles')
-                .delete()
-                .eq('id', id);
-
-            if (crmErr && pubErr) throw crmErr || pubErr;
-
-            alert('Usuario eliminado correctamente.');
+            const { error: pubErr } = await supabase.from('profiles').delete().eq('id', id);
+            try {
+                await (supabase.schema('crm').from('profiles') as any).delete().eq('id', id);
+            } catch (e) { }
+            if (pubErr) throw pubErr;
+            alert('Usuario eliminado.');
             fetchUsers();
         } catch (error: any) {
-            console.error('Error deleting user:', error);
-            alert('Error al eliminar: ' + error.message);
+            alert('Error: ' + error.message);
         }
     };
 
-    if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                <Shield size={64} className="mb-4 text-red-400" />
-                <h2 className="text-2xl font-bold">Acceso Denegado</h2>
-                <p>Solo los administradores pueden ver esta página.</p>
-            </div>
-        );
-    }
+    if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) return <div className="p-20 text-center text-gray-400 font-bold shrink-0 grow h-full flex flex-col items-center justify-center">Acceso Denegado</div>;
 
-    const filteredUsers = users.filter(u =>
-        (u.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (u.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase())
-    );
+    const filteredUsers = users.filter(u => (u.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (u.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()));
 
     return (
         <div className="max-w-7xl mx-auto space-y-8 pb-20">
@@ -327,154 +205,82 @@ const Settings: React.FC = () => {
                     <p className="text-gray-400 font-medium mt-1 text-lg">Control maestro de accesos y permisos</p>
                 </div>
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl">
-                    <button
-                        onClick={() => setActiveTab('users')}
-                        className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                        Usuarios
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('permissions')}
-                        className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'permissions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                        Matriz de Roles
-                    </button>
-                    <button
-                        onClick={() => setIsInviteModalOpen(true)}
-                        className="ml-4 px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all shadow-lg shadow-gray-200 flex items-center gap-2"
-                    >
-                        <User size={16} /> Invitar Usuario
-                    </button>
+                    <button onClick={() => setActiveTab('users')} className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Usuarios</button>
+                    <button onClick={() => setActiveTab('permissions')} className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'permissions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Roles</button>
+                    <button onClick={() => setIsInviteModalOpen(true)} className="ml-4 px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all shadow-lg flex items-center gap-2"><User size={16} /> Invitar</button>
                 </div>
             </div>
 
             {activeTab === 'users' ? (
-                <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden animate-in fade-in duration-300">
-                    <div className="p-8 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
-                        <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                            <User className="text-indigo-600" />
-                            Usuarios del Sistema
-                        </h3>
-                        <div className="relative w-full md:w-96">
+                <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
+                    <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-20">
+                        <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3"><User className="text-indigo-600" /> Miembros del Equipo</h3>
+                        <div className="relative w-96">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                            <input
-                                type="text"
-                                placeholder="Buscar por email o nombre..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-12 pr-4 py-3 bg-gray-50 border-none rounded-xl font-medium focus:ring-2 focus:ring-indigo-500"
-                            />
+                            <input type="text" placeholder="Buscar por email o nombre..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-gray-50 border-none rounded-xl font-medium focus:ring-2 focus:ring-indigo-500 shadow-inner" />
                         </div>
                     </div>
 
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-gray-50/50">
                                 <tr>
-                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-wider">Usuario</th>
-                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-wider">Rol Asignado</th>
-                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-wider">Estado</th>
-                                    <th className="px-8 py-4 text-right text-xs font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Perfil</th>
+                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Rol</th>
+                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Estado</th>
+                                    <th className="px-8 py-4 text-right text-xs font-black text-gray-400 uppercase tracking-widest">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {loading ? (
-                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">Cargando perfiles...</td></tr>
+                                    <tr><td colSpan={4} className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando...</td></tr>
                                 ) : filteredUsers.length === 0 ? (
-                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">No se encontraron usuarios activos.</td></tr>
+                                    <tr><td colSpan={4} className="p-20 text-center text-gray-400 font-bold">Sin resultados.</td></tr>
                                 ) : (
                                     filteredUsers.map(user => (
-                                        <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-8 py-4">
-                                                <div className="flex items-center">
-                                                    <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold mr-3">
-                                                        {user.email?.charAt(0).toUpperCase()}
-                                                    </div>
+                                        <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group">
+                                            <td className="px-8 py-6">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="h-12 w-12 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-xl shadow-inner group-hover:scale-110 transition-all">{user.email?.charAt(0).toUpperCase()}</div>
                                                     <div>
-                                                        <p className="font-bold text-gray-900">{user.email}</p>
-                                                        <p className="text-[10px] text-gray-400 font-mono">{user.full_name || 'Sin nombre cargado'}</p>
+                                                        <p className="font-black text-gray-900 leading-tight">{user.email}</p>
+                                                        <p className="text-xs text-gray-400 font-bold mt-0.5">{user.full_name || 'Nombre no definido'}</p>
                                                     </div>
                                                 </div>
                                             </td>
-
-                                            <td className="px-8 py-4">
+                                            <td className="px-8 py-6">
                                                 {editingId === user.id ? (
-                                                    <select
-                                                        value={tempRole}
-                                                        onChange={(e) => setTempRole(e.target.value)}
-                                                        className="bg-white border border-gray-100 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block w-full p-2.5 font-bold"
-                                                    >
-                                                        <option value="manager">Manager (Acceso Total)</option>
-                                                        <option value="jefe">Jefe (Visualización)</option>
-                                                        <option value="administrativo">Administrativo (Carga)</option>
-                                                        <option value="seller">Vendedor</option>
-                                                        <option value="driver">Repartidor (Driver)</option>
+                                                    <select value={tempRole} onChange={(e) => setTempRole(e.target.value)} className="bg-gray-50 border-none text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block w-full p-3 font-bold shadow-sm">
+                                                        {roles.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
                                                     </select>
                                                 ) : (
-                                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase
-                                                        ${user.role === 'manager' ? 'bg-indigo-100 text-indigo-700' :
-                                                            user.role === 'jefe' ? 'bg-purple-100 text-purple-700' :
-                                                                user.role === 'administrativo' ? 'bg-blue-100 text-blue-700' :
-                                                                    user.role === 'driver' ? 'bg-amber-100 text-amber-700' :
-                                                                        user.role === 'seller' ? 'bg-green-100 text-green-700' :
-                                                                            'bg-gray-100 text-gray-600'}`}>
-                                                        {user.role === 'manager' ? 'Manager' :
-                                                            user.role === 'jefe' ? 'Jefe' :
-                                                                user.role === 'administrativo' ? 'Admin Ops' :
-                                                                    user.role === 'driver' ? 'Repartidor' :
-                                                                        user.role === 'seller' ? 'Vendedor' :
-                                                                            user.role || 'Sin Rol'}
-                                                    </span>
+                                                    <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm ${user.role === 'manager' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{user.role || 'Sin Rol'}</span>
                                                 )}
                                             </td>
-
-                                            <td className="px-8 py-4">
+                                            <td className="px-8 py-6">
                                                 {editingId === user.id ? (
-                                                    <select
-                                                        value={tempStatus}
-                                                        onChange={(e) => setTempStatus(e.target.value)}
-                                                        className="bg-white border border-gray-100 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block w-full p-2.5 font-bold"
-                                                    >
+                                                    <select value={tempStatus} onChange={(e) => setTempStatus(e.target.value)} className="bg-gray-50 border-none text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block w-full p-3 font-bold shadow-sm">
                                                         <option value="pending">Pendiente</option>
                                                         <option value="active">Activo</option>
                                                         <option value="suspended">Suspendido</option>
                                                     </select>
                                                 ) : (
                                                     <div className="flex items-center gap-2">
-                                                        {user.status === 'active' ? (
-                                                            <><CheckCircle size={14} className="text-green-500" /><span className="text-green-700 font-bold text-xs">Activo</span></>
-                                                        ) : (
-                                                            <><Ban size={14} className="text-red-400" /><span className="text-red-500 font-bold text-xs">{user.status === 'pending' ? 'Pendiente' : 'Suspendido'}</span></>
-                                                        )}
+                                                        <div className={`h-2 w-2 rounded-full ${user.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></div>
+                                                        <span className={`font-black text-[10px] uppercase tracking-widest ${user.status === 'active' ? 'text-emerald-700' : 'text-rose-700'}`}>{user.status || 'Pendiente'}</span>
                                                     </div>
                                                 )}
                                             </td>
-
-                                            <td className="px-8 py-4 text-right">
+                                            <td className="px-8 py-6 text-right">
                                                 {editingId === user.id ? (
-                                                    <div className="flex justify-end gap-2">
-                                                        <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-400 hover:text-gray-600 font-black text-xs uppercase tracking-widest transition-all">Cancelar</button>
-                                                        <button onClick={() => handleSave(user.id)} className="px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 flex items-center gap-2 font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all">
-                                                            <Save size={14} /> Guardar
-                                                        </button>
+                                                    <div className="flex justify-end gap-3">
+                                                        <button onClick={() => setEditingId(null)} className="px-4 py-2 text-gray-400 hover:text-gray-600 font-black text-[10px] uppercase tracking-widest">Cancelar</button>
+                                                        <button onClick={() => handleSave(user.id)} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 flex items-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all"><Save size={14} /> Guardar</button>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex justify-end items-center gap-4">
-                                                        <button
-                                                            onClick={() => handleDeleteUser(user.id, user.email || '')}
-                                                            disabled={user.email === 'aterraza@3dental.cl'}
-                                                            className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all disabled:opacity-0 disabled:pointer-events-none"
-                                                            title="Eliminar Usuario"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleEdit(user)}
-                                                            disabled={user.email === 'aterraza@3dental.cl'}
-                                                            className="text-indigo-600 hover:text-indigo-800 font-black text-xs uppercase tracking-widest flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                                                        >
-                                                            <Edit size={14} /> Editar Perfil
-                                                        </button>
+                                                    <div className="flex justify-end items-center gap-6">
+                                                        <button onClick={() => handleDeleteUser(user.id, user.email || '')} disabled={user.email === 'aterraza@3dental.cl'} className="text-gray-300 hover:text-rose-500 transition-all disabled:opacity-0 hover:scale-125"><Trash2 size={18} /></button>
+                                                        <button onClick={() => handleEdit(user)} disabled={user.email === 'aterraza@3dental.cl'} className="text-indigo-600 hover:text-indigo-800 font-black text-[10px] uppercase tracking-widest group-hover:translate-x-[-4px] transition-all flex items-center gap-2 disabled:opacity-20"><Edit size={14} /> Editar</button>
                                                     </div>
                                                 )}
                                             </td>
@@ -486,61 +292,37 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="animate-in slide-in-from-right-8 duration-300 space-y-8">
+                <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-500">
                     <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
-                        <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+                        <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <div>
-                                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                                    <Shield className="text-indigo-600" />
-                                    Matriz de Permisos por Rol
-                                </h3>
-                                <p className="text-gray-400 text-sm mt-1">Configuración masiva de accesos para cada nivel jerárquico</p>
+                                <h3 className="text-3xl font-black text-gray-900 flex items-center gap-3"><Shield className="text-indigo-600" /> Permisos Maestros</h3>
+                                <p className="text-gray-400 font-medium mt-1">Configura el ADN de cada rol en el sistema</p>
                             </div>
-                            <button
-                                onClick={savePermissions}
-                                disabled={savingPerms}
-                                className="px-8 py-4 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-3 shadow-2xl hover:bg-black transition-all active:scale-95 disabled:opacity-50"
-                            >
-                                {savingPerms ? 'Guardando...' : <><Save size={18} /> Aplicar a todo el sistema</>}
-                            </button>
+                            <button onClick={savePermissions} disabled={savingPerms} className="px-10 py-5 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-black active:scale-95 transition-all disabled:opacity-50 flex items-center gap-3"><Save size={20} /> Guardar Cambios</button>
                         </div>
-
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="bg-gray-50/80">
+                            <table className="w-full text-left">
+                                <thead className="bg-white">
                                     <tr>
-                                        <th className="p-8 text-xs font-black text-gray-400 uppercase tracking-widest border-r border-gray-100">Permiso / Módulo</th>
-                                        {roles.map(role => (
-                                            <th key={role} className="p-4 text-center text-xs font-black text-gray-600 uppercase tracking-widest min-w-[120px]">
-                                                {role === 'administrativo' ? 'Admin Ops' : role}
-                                            </th>
-                                        ))}
+                                        <th className="p-10 text-[10px] font-black text-gray-400 uppercase tracking-widest border-r border-gray-100 sticky left-0 z-10 bg-white">Módulo / Permiso</th>
+                                        {roles.map(r => <th key={r} className="p-6 text-center text-[10px] font-black text-gray-900 uppercase tracking-widest min-w-[140px]">{r}</th>)}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {permissionList.map(perm => (
-                                        <tr key={perm.key} className="hover:bg-gray-50/50 transition-colors">
-                                            <td className="p-8 border-r border-gray-100 bg-white sticky left-0 z-10 shadow-sm">
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold text-gray-900">{perm.label}</span>
-                                                    <span className="text-[10px] text-gray-400 font-medium leading-relaxed max-w-[200px]">{perm.desc}</span>
-                                                </div>
+                                    {permissionList.map(p => (
+                                        <tr key={p.key} className="hover:bg-gray-50/30 transition-colors">
+                                            <td className="p-10 border-r border-gray-100 bg-white sticky left-0 z-10 shadow-sm">
+                                                <p className="font-black text-gray-900 text-sm leading-none">{p.label}</p>
+                                                <p className="text-[10px] text-gray-400 mt-1.5 font-medium leading-relaxed max-w-[200px]">{p.desc}</p>
                                             </td>
-                                            {roles.map(role => {
-                                                const isEnabled = (rolePerms[role] || []).includes(perm.key);
-                                                const isLocked = role === 'manager' && perm.key === 'MANAGE_PERMISSIONS';
-
+                                            {roles.map(r => {
+                                                const active = (rolePerms[r] || []).includes(p.key);
+                                                const locked = r === 'manager' && p.key === 'MANAGE_PERMISSIONS';
                                                 return (
-                                                    <td key={`${role}-${perm.key}`} className="p-4 text-center">
-                                                        <button
-                                                            onClick={() => togglePermission(role, perm.key)}
-                                                            disabled={isLocked}
-                                                            className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto transition-all ${isEnabled
-                                                                ? 'bg-emerald-50 text-emerald-600 ring-2 ring-emerald-100 ring-offset-2'
-                                                                : 'bg-gray-50 text-gray-300 hover:bg-gray-100'
-                                                                } ${isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer active:scale-90'}`}
-                                                        >
-                                                            {isEnabled ? <CheckCircle size={24} /> : <Ban size={24} />}
+                                                    <td key={`${r}-${p.key}`} className="p-6 text-center">
+                                                        <button onClick={() => togglePermission(r, p.key)} disabled={locked} className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center transition-all ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 ring-4 ring-indigo-50' : 'bg-gray-50 text-gray-200 hover:bg-gray-100'} ${locked ? 'opacity-30' : 'active:scale-90 hover:scale-105'}`}>
+                                                            {active ? <CheckCircle size={28} /> : <Ban size={28} />}
                                                         </button>
                                                     </td>
                                                 );
@@ -551,81 +333,32 @@ const Settings: React.FC = () => {
                             </table>
                         </div>
                     </div>
-
-                    <div className="bg-amber-50 rounded-3xl p-6 border border-amber-100 flex items-start gap-4">
-                        <AlertTriangle className="text-amber-500 shrink-0 mt-1" size={24} />
-                        <div>
-                            <p className="font-bold text-amber-900">Nota de Seguridad</p>
-                            <p className="text-amber-700 text-sm mt-1">Los cambios aplicados aquí afectan a todos los usuarios actuales y futuros con el rol seleccionado. El rol de <b>Manager</b> tiene protección contra bloqueo de permisos críticos para asegurar el acceso administrativo.</p>
-                        </div>
-                    </div>
                 </div>
             )}
 
-            {/* Invite Modal */}
             {isInviteModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !sendingInvite && setIsInviteModalOpen(false)}></div>
-                    <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-10 relative z-10 shadow-2xl animate-in zoom-in duration-300">
-                        <h3 className="text-3xl font-black text-gray-900 mb-2">Invitar Usuario</h3>
-                        <p className="text-gray-400 font-medium mb-8">El usuario recibirá un correo de bienvenida y acceso inmediato.</p>
-
-                        <form onSubmit={handleInviteUser} className="space-y-6">
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nombre Completo</label>
-                                <input
-                                    required
-                                    type="text"
-                                    value={inviteData.full_name}
-                                    onChange={e => setInviteData(prev => ({ ...prev, full_name: e.target.value }))}
-                                    placeholder="Ej: Andres Pereira"
-                                    className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500"
-                                />
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-md bg-black/40 animate-in fade-in duration-300">
+                    <div className="bg-white rounded-[3rem] w-full max-w-xl p-12 shadow-2xl relative animate-in zoom-in-95 duration-300 border border-gray-100">
+                        <h3 className="text-4xl font-black text-gray-900 mb-2">Crear Invitación</h3>
+                        <p className="text-gray-400 font-bold mb-10 text-lg leading-snug">Pre-registra al nuevo miembro y dale la bienvenida oficial.</p>
+                        <form onSubmit={handleInviteUser} className="space-y-8">
+                            <div className="space-y-3">
+                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Nombre y Apellido</label>
+                                <input required type="text" value={inviteData.full_name} onChange={e => setInviteData(p => ({ ...p, full_name: e.target.value }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black text-gray-900 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-gray-300" placeholder="Andrés Pereira" />
                             </div>
-
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Corporativo</label>
-                                <input
-                                    required
-                                    type="email"
-                                    value={inviteData.email}
-                                    onChange={e => setInviteData(prev => ({ ...prev, email: e.target.value.toLowerCase() }))}
-                                    placeholder="usuario@3dental.cl"
-                                    className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500"
-                                />
+                            <div className="space-y-3">
+                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Email Corporativo</label>
+                                <input required type="email" value={inviteData.email} onChange={e => setInviteData(p => ({ ...p, email: e.target.value.toLowerCase() }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black text-gray-900 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-gray-300" placeholder="apereira@3dental.cl" />
                             </div>
-
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Rol en el Sistema</label>
-                                <select
-                                    value={inviteData.role}
-                                    onChange={e => setInviteData(prev => ({ ...prev, role: e.target.value }))}
-                                    className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500"
-                                >
-                                    <option value="seller">Vendedor (Sugerido)</option>
-                                    <option value="administrativo">Administrativo</option>
-                                    <option value="jefe">Jefe de Área</option>
-                                    <option value="driver">Repartidor</option>
-                                    <option value="manager">Manager</option>
+                            <div className="space-y-3">
+                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Rol de Acceso</label>
+                                <select value={inviteData.role} onChange={e => setInviteData(p => ({ ...p, role: e.target.value }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black text-gray-900 focus:ring-4 focus:ring-indigo-100 transition-all appearance-none cursor-pointer">
+                                    {roles.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
                                 </select>
                             </div>
-
-                            <div className="flex gap-4 pt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsInviteModalOpen(false)}
-                                    disabled={sendingInvite}
-                                    className="flex-1 py-4 text-gray-400 font-black text-xs uppercase tracking-widest hover:text-gray-600 transition-all"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={sendingInvite}
-                                    className="flex-[2] py-4 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-gray-200 hover:bg-black transition-all active:scale-95 disabled:opacity-50"
-                                >
-                                    {sendingInvite ? 'Enviando...' : 'Enviar Invitación'}
-                                </button>
+                            <div className="flex gap-4 pt-6">
+                                <button type="button" onClick={() => setIsInviteModalOpen(false)} disabled={sendingInvite} className="flex-1 h-16 text-gray-400 font-black uppercase tracking-widest text-xs hover:text-gray-600 transition-all">Cancelar</button>
+                                <button type="submit" disabled={sendingInvite} className="flex-[2] h-16 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black active:scale-95 transition-all disabled:opacity-50">{sendingInvite ? 'Enviando...' : 'Generar Invitación'}</button>
                             </div>
                         </form>
                     </div>
