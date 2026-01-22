@@ -70,18 +70,16 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 console.log("UserContext: Session Check", session?.user?.id);
 
                 if (session?.user) {
-                    // Try to fetch from public view (which points to crm.profiles)
+                    // 1. Try to fetch from public view (which points to crm.profiles) by ID
                     const { data, error } = await (supabase
                         .from('profiles') as any)
                         .select('*')
                         .eq('id', session.user.id);
 
                     if (data && data.length > 0) {
-                        console.log("UserContext: Profile found in public view");
                         setProfile(data[0] as any as Profile);
                     } else {
-                        console.log('UserContext: No profile in view, trying CRM schema...', error);
-                        // Fallback to explicit crm schema if view fails
+                        // 2. Try explicit crm schema by ID
                         const { data: crmData } = await (supabase
                             .schema('crm')
                             .from('profiles') as any)
@@ -89,50 +87,46 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             .eq('id', session.user.id);
 
                         if (crmData && crmData.length > 0) {
-                            console.log("UserContext: Profile found in CRM schema");
                             setProfile(crmData[0] as any as Profile);
                         } else {
+                            // 3. SPECIAL: Try to find by EMAIL (Invited users)
+                            const { data: invitedData } = await (supabase
+                                .schema('crm')
+                                .from('profiles') as any)
+                                .select('*')
+                                .eq('email', session.user.email)
+                                .maybeSingle();
+
+                            if (invitedData) {
+                                console.log("UserContext: Linking invited user by email...");
+                                // Update invited profile with real ID
+                                const { data: linkedProfile } = await (supabase
+                                    .schema('crm')
+                                    .from('profiles') as any)
+                                    .update({ id: session.user.id })
+                                    .eq('email', session.user.email)
+                                    .select();
+
+                                if (linkedProfile && linkedProfile.length > 0) {
+                                    setProfile(linkedProfile[0] as any as Profile);
+                                    return;
+                                }
+                            }
+
+                            // 4. Default: Create new profile
                             console.log("UserContext: Creating new profile in BOTH schemas...");
-                            // Profile doesn't exist, create it in BOTH crm and public schemas for safety
                             const profileData = {
                                 id: session.user.id,
                                 email: session.user.email,
-                                role: 'seller', // Default role
-                                status: 'pending', // Default status
+                                role: 'seller',
+                                status: 'active', // Manual reg is active
                                 full_name: session.user.user_metadata?.full_name || ''
                             };
 
-                            // 1. Try CRM schema
-                            const { data: crmNew, error: crmErr } = await (supabase
-                                .schema('crm')
-                                .from('profiles') as any)
-                                .insert(profileData)
-                                .select();
+                            await (supabase.schema('crm').from('profiles') as any).insert(profileData);
+                            await supabase.from('profiles').insert(profileData);
 
-                            // 2. Try Public schema (Redundant but safe for visibility)
-                            const { data: pubNew, error: pubErr } = await supabase
-                                .from('profiles')
-                                .insert(profileData)
-                                .select();
-
-                            if (crmErr && pubErr) console.error("UserContext: ALL profile creation attempts failed", { crmErr, pubErr });
-
-                            if (crmNew && crmNew.length > 0) {
-                                setProfile(crmNew[0] as any as Profile);
-                            } else if (pubNew && pubNew.length > 0) {
-                                setProfile(pubNew[0] as any as Profile);
-                            } else {
-                                console.warn("UserContext: Failed to create profiles, using fallback dummy.");
-                                // EMERGENCY BYPASS: Always allow super admin
-                                const isSuperAdmin = session.user.email === 'aterraza@3dental.cl';
-                                setProfile({
-                                    id: session.user.id,
-                                    email: session.user.email,
-                                    role: isSuperAdmin ? 'manager' : 'seller',
-                                    status: isSuperAdmin ? 'active' : 'pending',
-                                    zone: null
-                                } as any as Profile);
-                            }
+                            setProfile(profileData as any as Profile);
                         }
                     }
                 }

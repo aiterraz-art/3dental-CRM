@@ -16,9 +16,17 @@ const Settings: React.FC = () => {
     const [tempRole, setTempRole] = useState<string>('');
     const [tempStatus, setTempStatus] = useState<string>('');
 
-    // Permissions State
     const [rolePerms, setRolePerms] = useState<Record<string, string[]>>({});
     const [savingPerms, setSavingPerms] = useState(false);
+
+    // Invitation State
+    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+    const [sendingInvite, setSendingInvite] = useState(false);
+    const [inviteData, setInviteData] = useState({
+        email: '',
+        full_name: '',
+        role: 'seller'
+    });
 
     const roles = ['manager', 'jefe', 'administrativo', 'seller', 'driver'];
     const permissionList = [
@@ -176,6 +184,92 @@ const Settings: React.FC = () => {
         }
     };
 
+    const handleInviteUser = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inviteData.email || !inviteData.full_name) {
+            alert("Por favor completa todos los campos.");
+            return;
+        }
+
+        setSendingInvite(true);
+        try {
+            // 1. Create/Check Profile in crm.profiles
+            const { data: existing, error: checkErr } = await (supabase
+                .schema('crm')
+                .from('profiles') as any)
+                .select('id')
+                .eq('email', inviteData.email)
+                .maybeSingle();
+
+            if (existing) {
+                alert("Este usuario ya está registrado o invitado.");
+                setSendingInvite(false);
+                return;
+            }
+
+            // Create placeholder profile in CRM schema
+            const { data: newProfile, error: insError } = await (supabase
+                .schema('crm')
+                .from('profiles') as any)
+                .insert({
+                    id: crypto.randomUUID(), // Temporary ID until Google Login
+                    email: inviteData.email.toLowerCase(),
+                    full_name: inviteData.full_name,
+                    role: inviteData.role,
+                    status: 'active' // Pre-approved
+                })
+                .select();
+
+            if (insError) throw insError;
+
+            // 2. Send Invitation Email via Gmail API
+            const { data: { session } } = await supabase.auth.getSession();
+            const providerToken = session?.provider_token;
+
+            if (!providerToken) {
+                alert('Invitación creada, pero el correo no pudo enviarse (No detectamos sesión de Google con permisos de envío).');
+            } else {
+                const subject = "Bienvenido a 3dental CRM 🏥";
+                const message = `Hola ${inviteData.full_name},\n\nSe te ha dado acceso al CRM de 3dental con el rol de ${inviteData.role.toUpperCase()}.\n\nYa puedes ingresar a la plataforma utilizando tu cuenta de Google en el siguiente enlace:\n\nhttps://3dental-crm.vercel.app/\n\nSaludos,\nEquipo 3dental`;
+
+                const rawMimeMessage = [
+                    `From: ${session.user.email}`,
+                    `To: ${inviteData.email}`,
+                    `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+                    'MIME-Version: 1.0',
+                    'Content-Type: text/plain; charset="UTF-8"',
+                    'Content-Transfer-Encoding: 7bit',
+                    '',
+                    message
+                ].join('\r\n');
+
+                const encodedMessage = btoa(unescape(encodeURIComponent(rawMimeMessage)))
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
+
+                await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${providerToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ raw: encodedMessage })
+                });
+            }
+
+            alert('Invitación enviada exitosamente.');
+            setIsInviteModalOpen(false);
+            setInviteData({ email: '', full_name: '', role: 'seller' });
+            fetchUsers();
+        } catch (error: any) {
+            console.error('Error inviting user:', error);
+            alert('Error al invitar: ' + error.message);
+        } finally {
+            setSendingInvite(false);
+        }
+    };
+
     if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
@@ -210,6 +304,12 @@ const Settings: React.FC = () => {
                         className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'permissions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                     >
                         Matriz de Roles
+                    </button>
+                    <button
+                        onClick={() => setIsInviteModalOpen(true)}
+                        className="ml-4 px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all shadow-lg shadow-gray-200 flex items-center gap-2"
+                    >
+                        <User size={16} /> Invitar Usuario
                     </button>
                 </div>
             </div>
@@ -414,6 +514,76 @@ const Settings: React.FC = () => {
                             <p className="font-bold text-amber-900">Nota de Seguridad</p>
                             <p className="text-amber-700 text-sm mt-1">Los cambios aplicados aquí afectan a todos los usuarios actuales y futuros con el rol seleccionado. El rol de <b>Manager</b> tiene protección contra bloqueo de permisos críticos para asegurar el acceso administrativo.</p>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Invite Modal */}
+            {isInviteModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !sendingInvite && setIsInviteModalOpen(false)}></div>
+                    <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-10 relative z-10 shadow-2xl animate-in zoom-in duration-300">
+                        <h3 className="text-3xl font-black text-gray-900 mb-2">Invitar Usuario</h3>
+                        <p className="text-gray-400 font-medium mb-8">El usuario recibirá un correo de bienvenida y acceso inmediato.</p>
+
+                        <form onSubmit={handleInviteUser} className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nombre Completo</label>
+                                <input
+                                    required
+                                    type="text"
+                                    value={inviteData.full_name}
+                                    onChange={e => setInviteData(prev => ({ ...prev, full_name: e.target.value }))}
+                                    placeholder="Ej: Andres Pereira"
+                                    className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Corporativo</label>
+                                <input
+                                    required
+                                    type="email"
+                                    value={inviteData.email}
+                                    onChange={e => setInviteData(prev => ({ ...prev, email: e.target.value.toLowerCase() }))}
+                                    placeholder="usuario@3dental.cl"
+                                    className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Rol en el Sistema</label>
+                                <select
+                                    value={inviteData.role}
+                                    onChange={e => setInviteData(prev => ({ ...prev, role: e.target.value }))}
+                                    className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option value="seller">Vendedor (Sugerido)</option>
+                                    <option value="administrativo">Administrativo</option>
+                                    <option value="jefe">Jefe de Área</option>
+                                    <option value="driver">Repartidor</option>
+                                    <option value="manager">Manager</option>
+                                </select>
+                            </div>
+
+                            <div className="flex gap-4 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsInviteModalOpen(false)}
+                                    disabled={sendingInvite}
+                                    className="flex-1 py-4 text-gray-400 font-black text-xs uppercase tracking-widest hover:text-gray-600 transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={sendingInvite}
+                                    className="flex-[2] py-4 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-gray-200 hover:bg-black transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    {sendingInvite ? 'Enviando...' : 'Enviar Invitación'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
