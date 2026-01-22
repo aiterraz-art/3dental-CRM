@@ -59,6 +59,7 @@ const Dashboard = () => {
     const [dailyVisits, setDailyVisits] = useState<any[]>([]);
     const [adminSummary, setAdminSummary] = useState<any[]>([]);
     const [selectedVisitForEvidence, setSelectedVisitForEvidence] = useState<any | null>(null);
+    const [neglectedClients, setNeglectedClients] = useState<any[]>([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
 
     // Tasks State
@@ -167,6 +168,35 @@ const Dashboard = () => {
                     .lte('due_date', new Date(new Date().setHours(23, 59, 59, 999)).toISOString())
                     .order('due_date', { ascending: true });
                 setTasks(tasksData || []);
+
+                // C. Get Neglected Clients (Intelligence)
+                // We fetch all clients assigned to the user or all if supervisor
+                let clientsQuery = supabase.from('clients').select('id, name');
+                if (!hasPermission('VIEW_TEAM_STATS')) {
+                    clientsQuery = clientsQuery.eq('created_by', profile.id);
+                }
+                const { data: allClients } = await clientsQuery;
+
+                if (allClients) {
+                    // Fetch LAST visit for EACH client globally (not just today)
+                    const { data: lastVisits } = await supabase
+                        .from('visits')
+                        .select('client_id, check_in_time')
+                        .in('client_id', allClients.map(c => c.id))
+                        .eq('status', 'completed')
+                        .order('check_in_time', { ascending: false });
+
+                    const now = new Date();
+                    const neglected = allClients.map(client => {
+                        const lastVisit = lastVisits?.find(v => v.client_id === client.id);
+                        const lastDate = lastVisit ? new Date(lastVisit.check_in_time) : null;
+                        const days = lastDate ? Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)) : 999;
+                        return { ...client, daysSinceLastVisit: days, lastVisitDate: lastDate };
+                    }).filter(c => c.daysSinceLastVisit >= 15)
+                        .sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit);
+
+                    setNeglectedClients(neglected);
+                }
             }
 
             // ... rest of existing fetch logic ...
@@ -655,7 +685,64 @@ const Dashboard = () => {
                             <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 text-xs">Vendedores Activos</p>
                             <p className="text-3xl font-black text-gray-900">{adminSummary.filter(s => s.visits > 0).length}</p>
                         </div>
+                        <div className="premium-card p-6 border-l-4 border-l-red-500 bg-red-50/30">
+                            <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 text-xs">Clientes Descuidados</p>
+                            <div className="flex items-end justify-between">
+                                <p className="text-3xl font-black text-red-700">{neglectedClients.length}</p>
+                                <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-1 rounded-lg">Impacto Riesgo</span>
+                            </div>
+                        </div>
                     </div >
+
+                    {/* Preventative Intelligence: Neglected Clients */}
+                    <div className="premium-card bg-gradient-to-r from-gray-900 to-gray-800 text-white p-8 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                            <AlertCircle size={80} />
+                        </div>
+                        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+                            {neglectedClients.length > 0 ? (
+                                <>
+                                    <div>
+                                        <h3 className="text-2xl font-black mb-1">Fuga de Clientes Detectada</h3>
+                                        <p className="text-gray-400 font-medium max-w-xl">
+                                            Hay {neglectedClients.length} clientes que no han sido visitados en más de 15 días.
+                                            La probabilidad de pérdida aumenta exponencialmente después de la tercera semana.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <div className="flex -space-x-3">
+                                            {neglectedClients.slice(0, 3).map((c, i) => (
+                                                <div key={i} className="w-10 h-10 rounded-full bg-red-500 border-2 border-gray-900 flex items-center justify-center font-bold text-xs" title={c.name}>
+                                                    {c.name.substring(0, 1)}
+                                                </div>
+                                            ))}
+                                            {neglectedClients.length > 3 && (
+                                                <div className="w-10 h-10 rounded-full bg-gray-700 border-2 border-gray-900 flex items-center justify-center font-bold text-xs">
+                                                    +{neglectedClients.length - 3}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <Link to="/clients?filter=neglected" className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-bold text-sm transition-all flex items-center shadow-lg shadow-red-900/40">
+                                            Tomar Acción <ChevronRight size={16} className="ml-2" />
+                                        </Link>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div>
+                                        <h3 className="text-2xl font-black mb-1 text-emerald-400">Salud de Cartera: Óptima</h3>
+                                        <p className="text-gray-400 font-medium max-w-xl">
+                                            No se detectan clientes descuidados en los últimos 15 días.
+                                            Tu equipo mantiene una frecuencia de visita saludable en todas las zonas.
+                                        </p>
+                                    </div>
+                                    <div className="bg-emerald-500/20 px-6 py-3 rounded-xl border border-emerald-500/30 text-emerald-400 font-bold text-sm">
+                                        Sistema Monitorizando...
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
 
                     {/* Table View per Seller */}
                     < div className="premium-card overflow-hidden" >
@@ -774,12 +861,20 @@ const Dashboard = () => {
                         <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full blur-3xl -mr-32 -mt-32 opacity-50"></div>
                         <div className="relative">
                             <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Tu Meta Mensual</p>
-                                    <h3 className="text-2xl font-black text-gray-900">
-                                        ${monthlyStats.currentSales.toLocaleString()} <span className="text-gray-300">/ ${monthlyStats.goal.toLocaleString()}</span>
-                                    </h3>
-                                </div>
+                                <h3 className="text-2xl font-black text-gray-900">
+                                    ${monthlyStats.currentSales.toLocaleString()} <span className="text-gray-300">/ ${monthlyStats.goal.toLocaleString()}</span>
+                                </h3>
+                            </div>
+                            <div className="flex gap-4">
+                                {neglectedClients.length > 0 && (
+                                    <div className="bg-red-50 border border-red-100 px-4 py-2 rounded-2xl flex items-center shadow-sm">
+                                        <AlertCircle size={18} className="text-red-500 mr-2" />
+                                        <div>
+                                            <p className="text-[10px] font-black text-red-600 uppercase tracking-widest leading-none">Descuidados</p>
+                                            <p className="text-sm font-black text-red-700">{neglectedClients.length} Clientes</p>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="text-right">
                                     <p className="text-xs font-black text-emerald-500 uppercase tracking-widest mb-1">Comisión Estimada</p>
                                     <p className="text-xl font-black text-emerald-600">
@@ -787,22 +882,40 @@ const Dashboard = () => {
                                     </p>
                                 </div>
                             </div>
+                        </div>
 
-                            {/* Progress Bar */}
-                            <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden mb-2">
-                                <div
-                                    className="h-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-600 rounded-full transition-all duration-1000 ease-out relative"
-                                    style={{ width: `${Math.min((monthlyStats.currentSales / (monthlyStats.goal || 1)) * 100, 100)}%` }}
-                                >
-                                    <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
-                                </div>
-                            </div>
-                            <div className="flex justify-between text-xs font-bold text-gray-400">
-                                <span>0%</span>
-                                <span>{monthlyStats.goal > 0 ? Math.round((monthlyStats.currentSales / monthlyStats.goal) * 100) : 0}% Completado</span>
+                        {/* Progress Bar */}
+                        <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden mb-2">
+                            <div
+                                className="h-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-600 rounded-full transition-all duration-1000 ease-out relative"
+                                style={{ width: `${Math.min((monthlyStats.currentSales / (monthlyStats.goal || 1)) * 100, 100)}%` }}
+                            >
+                                <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
                             </div>
                         </div>
+                        <div className="flex justify-between items-center text-xs font-bold text-gray-400">
+                            <span>0%</span>
+                            <span>{monthlyStats.goal > 0 ? Math.round((monthlyStats.currentSales / monthlyStats.goal) * 100) : 0}% Completado</span>
+                        </div>
                     </div>
+
+                    {neglectedClients.length > 0 && (
+                        <div className="premium-card bg-gradient-to-r from-red-600 to-red-700 text-white p-6 relative overflow-hidden group shadow-xl shadow-red-200">
+                            <div className="absolute top-0 right-0 p-6 opacity-20 group-hover:rotate-12 transition-transform">
+                                <AlertCircle size={60} />
+                            </div>
+                            <div className="relative flex items-center justify-between">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-80">Alerta de Fidelización</p>
+                                    <h3 className="text-xl font-black">Tienes {neglectedClients.length} clientes desatendidos</h3>
+                                    <p className="text-sm font-medium opacity-90 mt-1">Llevan más de 15 días sin una visita registrada.</p>
+                                </div>
+                                <Link to="/clients?filter=neglected" className="bg-white text-red-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-red-50 transition-all flex items-center whitespace-nowrap">
+                                    Ver Lista
+                                </Link>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Performance Widgets */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -847,13 +960,8 @@ const Dashboard = () => {
                         {/* Activity History */}
                         <div className="xl:col-span-2 space-y-6">
 
-                            {/* NEW: Detailed Visits Table (Seller) */}
+                            {/* Detailed Visits Table (Seller) */}
                             {renderDailyTable()}
-
-                            {/* Legacy Cards (Optional, keeping for now or removing if redundant. Let's keep cards for "Recent" generic feed if wanted, but table is better. I'll hide card list if table is present, or keep both? User asked for "easy review", table is best. Let's JUST show table for visits, and maybe keeping cards for "Quotations" vs "Visits" mixed history is useful?
-                             Actually, the table ONLY shows Visits. "Recent Activity" showed Visits AND Quotations. 
-                             I will keep "Recent Activity" as is for the mixed feed, but ADD the table above it for specific check-in control.
-                             */}
 
                             <h3 className="text-2xl font-black text-gray-900 flex items-center pt-8 border-t border-gray-100">
                                 <TrendingUp size={24} className="mr-3 text-indigo-600" />
@@ -968,30 +1076,11 @@ const Dashboard = () => {
                                     </div>
                                 </div>
                             </div>
-
-
                         </div>
                     </div>
                 </div>
-            )
-            }
-
-            {/* Modals */}
-            {
-                selectedVisitForEvidence && (
-                    <VisualEvidence
-                        visitId={selectedVisitForEvidence.id}
-                        onClose={() => setSelectedVisitForEvidence(null)}
-                    />
-                )
-            }
-
-            <TaskModal
-                isOpen={isTaskModalOpen}
-                onClose={() => setIsTaskModalOpen(false)}
-                onTaskAdded={fetchDashboardData}
-            />
-        </div >
+            )}
+        </div>
     );
 };
 

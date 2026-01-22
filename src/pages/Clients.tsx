@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MapPin, ChevronRight, Filter, Phone, Mail, CheckCircle2, Trash2, Building2, Pencil, Send, Paperclip, X, FileText, Upload } from 'lucide-react';
+import { Search, Plus, MapPin, ChevronRight, Filter, Phone, Mail, CheckCircle2, Trash2, Building2, Pencil, Send, Paperclip, X, FileText, Upload, AlertCircle } from 'lucide-react';
 import Papa from 'papaparse';
 import { Database } from '../types/supabase';
 import { Link } from 'react-router-dom';
@@ -48,13 +48,18 @@ const deg2rad = (deg: number) => {
 const ClientsContent = () => {
     const { profile, hasPermission } = useUser();
     const navigate = useNavigate();
+    const searchParams = new URLSearchParams(window.location.search);
+    const initialFilter = searchParams.get('filter') || 'all';
+
     const [clients, setClients] = useState<Client[]>([]);
+    const [neglectFilter, setNeglectFilter] = useState<'all' | 'neglected'>(initialFilter as any);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [profiles, setProfiles] = useState<any[]>([]);
 
     // Client 360 View State
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [neglectedData, setNeglectedData] = useState<Record<string, number>>({});
 
     // Client Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -160,7 +165,31 @@ const ClientsContent = () => {
             .order('name');
 
         if (error) console.error("Error fetching clients:", error);
-        if (data) setClients(data);
+        if (data) {
+            setClients(data);
+
+            // Fetch LAST visit for each client to calculate neglect
+            const { data: lastVisits } = await supabase
+                .from('visits')
+                .select('client_id, check_in_time')
+                .in('client_id', data.map(c => c.id))
+                .eq('status', 'completed')
+                .order('check_in_time', { ascending: false });
+
+            const neglectMap: Record<string, number> = {};
+            const now = new Date();
+
+            data.forEach(client => {
+                const lastVisit = lastVisits?.find(v => v.client_id === client.id);
+                if (lastVisit) {
+                    const days = Math.floor((now.getTime() - new Date(lastVisit.check_in_time).getTime()) / (1000 * 60 * 60 * 24));
+                    neglectMap[client.id] = days;
+                } else {
+                    neglectMap[client.id] = 999; // Never visited
+                }
+            });
+            setNeglectedData(neglectMap);
+        }
         setLoading(false);
     };
 
@@ -559,10 +588,13 @@ const ClientsContent = () => {
         const isOwner = c.created_by === profile?.id;
         const canViewAll = hasPermission('VIEW_ALL_CLIENTS');
 
+        const isNeglected = (neglectedData[c.id] || 0) >= 15;
+        const passesNeglect = neglectFilter === 'all' || isNeglected;
+
         if (canViewAll) {
-            return (viewMode === 'all' || isOwner) && matchesSearch;
+            return (viewMode === 'all' || isOwner) && matchesSearch && passesNeglect;
         }
-        return isOwner && matchesSearch;
+        return isOwner && matchesSearch && passesNeglect;
     });
 
     return (
@@ -618,6 +650,22 @@ const ClientsContent = () => {
                         </>
                     )}
 
+                    <div className="flex bg-gray-100/50 p-1 rounded-2xl border border-gray-100 self-center md:self-auto">
+                        <button
+                            onClick={() => setNeglectFilter('all')}
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${neglectFilter === 'all' ? 'bg-white shadow text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                        >
+                            Todos
+                        </button>
+                        <button
+                            onClick={() => setNeglectFilter('neglected')}
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center ${neglectFilter === 'neglected' ? 'bg-red-500 text-white shadow-lg shadow-red-200' : 'text-gray-400 hover:text-red-500'}`}
+                        >
+                            <AlertCircle size={12} className="mr-1.5" />
+                            En Riesgo
+                        </button>
+                    </div>
+
                     <button
                         onClick={() => handleOpenModal()}
                         className="bg-gray-900 text-white px-6 py-4 rounded-2xl font-bold flex items-center shadow-lg hover:bg-black active:scale-95 transition-all text-sm"
@@ -654,8 +702,15 @@ const ClientsContent = () => {
                             <div key={client.id} className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between min-h-[340px]">
                                 <div className="space-y-6 cursor-pointer" onClick={() => setSelectedClient(client)}>
                                     <div className="flex justify-between items-start">
-                                        <div className="w-16 h-16 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-inner">
-                                            <Building2 size={28} />
+                                        <div className="relative">
+                                            <div className="w-16 h-16 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-inner">
+                                                <Building2 size={28} />
+                                            </div>
+                                            {neglectedData[client.id] >= 15 && (
+                                                <div className={`absolute -top-2 -right-2 px-2 py-1 rounded-lg text-[8px] font-black text-white shadow-lg animate-pulse ${neglectedData[client.id] >= 30 ? 'bg-red-600' : 'bg-amber-500'}`}>
+                                                    {neglectedData[client.id] >= 30 ? 'CRÍTICO' : 'RIESGO'}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                                             {(hasPermission('MANAGE_CLIENTS') || isOwner) && (
@@ -764,11 +819,12 @@ const ClientsContent = () => {
                                         <FileText size={20} />
                                     </button>
                                 </div >
-                            </div >
-                        );
+                            </div>
+                        )
                     })}
                 </div >
-            )}
+            )
+            }
 
             {/* Client Detail View Modal */}
             {selectedClient && (
@@ -1077,6 +1133,7 @@ const ClientsContent = () => {
         </div>
     );
 };
+
 
 const Clients = () => {
     return (

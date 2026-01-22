@@ -91,3 +91,11 @@ RESTRICCIONES ABSOLUTAS
 - No generar código incompleto
 - No sacrificar calidad por rapidez
 - No desviarse del idioma español
+- **RESTRICCIÓN ABSOLUTA E INQUEBRANTABLE: PROHIBIDO ejecutar `git push` o cualquier despliegue a GitHub/Vercel/Staging sin autorización EXPLÍCITA, ESPECÍFICA y PREVIA del usuario para ESA acción en particular.**
+
+GESTIÓN DE ENTORNOS Y DESPLIEGUE
+- El desarrollo se realiza SÓLO en el entorno local.
+- Los cambios deben validarse localmente antes de cualquier consideración de despliegue.
+- La versión estable en GitHub/Vercel es INTOCABLE hasta que el usuario indique explícitamente "Desplegar a producción" o similar.
+- En caso de duda sobre la estabilidad, se debe priorizar la permanencia en el entorno local.
+- Ante errores críticos en local, se debe revertir o corregir localmente sin afectar el repositorio remoto.
