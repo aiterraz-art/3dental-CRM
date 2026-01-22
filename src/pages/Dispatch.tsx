@@ -95,23 +95,40 @@ const Dispatch: React.FC = () => {
             setIsDetailsModalOpen(true);
             setSelectedRouteItems([]); // Reset previous
 
+            console.log("Fetching details for route:", route.id);
+
             const { data, error } = await supabase
                 .from('route_items')
                 .select(`
-                    id, status, notes, delivered_at, proof_photo_url,
+                    id, 
+                    status, 
+                    notes, 
+                    delivered_at, 
+                    proof_photo_url,
                     order:orders (
-                        id, folio, total_amount,
-                        client:clients (name, address, phone)
+                        id, 
+                        folio, 
+                        total_amount,
+                        client:clients (
+                            name, 
+                            address, 
+                            phone
+                        )
                     )
                 `)
                 .eq('route_id', route.id)
                 .order('sequence_order', { ascending: true });
 
-            if (error) throw error;
+            if (error) {
+                console.error("Supabase error fetching route items:", error);
+                throw error;
+            }
+
+            console.log("Fetched items:", data);
             setSelectedRouteItems(data || []);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error fetching route details:", err);
-            alert("No se pudieron cargar los detalles de la ruta.");
+            alert("No se pudieron cargar los detalles de la ruta: " + (err.message || "Error desconocido"));
         }
     };
 
@@ -858,7 +875,7 @@ const Dispatch: React.FC = () => {
 
         </div>
 
-            {/* Print Modal */ }
+            {/* Modals & Overlays */ }
     {
         printingOrder && (
             <DeliveryNoteTemplate
@@ -900,8 +917,8 @@ const Dispatch: React.FC = () => {
                                                 <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">#{item.order?.folio || item.id.slice(0, 8)}</span>
                                                 <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${item.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{item.status}</span>
                                             </div>
-                                            <h4 className="font-bold text-gray-800 truncate">{item.order?.client?.name}</h4>
-                                            <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin size={10} />{item.order?.client?.address}</p>
+                                            <h4 className="font-bold text-gray-800 truncate">{item.order?.client?.name || "Cliente Desconocido"}</h4>
+                                            <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin size={10} />{item.order?.client?.address || "Sin dirección"}</p>
                                         </div>
                                         {item.proof_photo_url ? (
                                             <div className="relative shrink-0">
