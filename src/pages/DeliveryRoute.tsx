@@ -84,7 +84,9 @@ const DeliveryRoute: React.FC = () => {
                     )
                 `)
                 .in('route_id', routeIds)
-                .in('status', ['pending', 'rescheduled']); // Show pending items
+                .in('route_id', routeIds)
+                .in('status', ['pending', 'rescheduled'])
+                .order('sequence_order', { ascending: true }); // Ensure fixed order
 
             if (error) {
                 console.error("Error fetching items:", error);
@@ -282,7 +284,9 @@ const DeliveryRoute: React.FC = () => {
                             mapId="DRIVER_MAP"
                             className="w-full h-full"
                         >
-                            {orders.filter(o => o.client?.lat).map(order => (
+                            <Directions orders={orders} userLocation={userLocation} />
+
+                            {orders.filter(o => o.client?.lat).map((order, index) => (
                                 <AdvancedMarker
                                     key={order.id}
                                     position={{ lat: Number(order.client.lat), lng: Number(order.client.lng) }}
@@ -290,7 +294,13 @@ const DeliveryRoute: React.FC = () => {
                                         if (validateGeofence(order)) setSelectedOrder(order);
                                     }}
                                 >
-                                    <Pin background={'#F59E0B'} borderColor={'white'} glyphColor={'white'} scale={1.2} />
+                                    <Pin
+                                        background={'#4F46E5'}
+                                        borderColor={'white'}
+                                        glyph={String(index + 1)} // Numbered pin
+                                        glyphColor={'white'}
+                                        scale={1.2}
+                                    />
                                 </AdvancedMarker>
                             ))}
                         </GoogleMap>
