@@ -184,36 +184,41 @@ const Settings: React.FC = () => {
             return;
         }
 
-        if (!window.confirm(`¿Estás seguro de eliminar permanentemente a ${email}? Se desvinculará de todos sus clientes antes de borrar.`)) {
+        if (!window.confirm(`¿Estás seguro de eliminar permanentemente a ${email}? Se borrarán todas sus visitas y desvincularán sus clientes.`)) {
             return;
         }
 
         try {
-            // 1. Unbind user from clients
-            await supabase.from('clients').update({ seller_id: null }).eq('seller_id', id);
+            // 1. Unbind from clients (created_by)
+            await supabase.from('clients').update({ created_by: null }).eq('created_by', id);
 
-            // 2. Unbind or delete from visit_history
-            // If the schema allows null in user_id, we update; otherwise we delete activity
-            await supabase.from('visit_history').delete().eq('user_id', id);
+            // 2. Clear activity records by this user
+            await supabase.from('visits').delete().eq('sales_rep_id', id);
+            await supabase.from('quotations').update({ seller_id: null }).eq('seller_id', id);
+            await supabase.from('delivery_routes').update({ driver_id: null }).eq('driver_id', id);
 
-            // 3. Delete from meta_config
+            // 3. Clear Task assignments
+            await supabase.from('tasks').delete().eq('assigned_to', id);
+            await supabase.from('tasks').delete().eq('assigned_by', id);
+
+            // 4. Delete Meta configurations
             await supabase.from('meta_config').delete().eq('id', id);
 
-            // 4. Delete from public schema
+            // 5. Delete from public schema
             const { error: pubErr } = await supabase.from('profiles').delete().eq('id', id);
 
-            // 3. Delete from crm schema silently
+            // 6. Delete from crm schema silently
             try {
                 await (supabase.schema('crm').from('profiles') as any).delete().eq('id', id);
             } catch (e) { }
 
             if (pubErr) throw pubErr;
 
-            alert('Usuario eliminado con éxito.');
+            alert('Usuario eliminado con éxito de todos los registros.');
             fetchUsers();
         } catch (error: any) {
             console.error('Delete error:', error);
-            alert('Error al eliminar: ' + (error.message || 'El usuario tiene registros asociados (visitas o metas) que impiden su borrado.'));
+            alert('Error al eliminar: ' + (error.message || 'Existen restricciones de base de datos pendientes.'));
         }
     };
 
