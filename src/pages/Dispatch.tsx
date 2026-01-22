@@ -91,12 +91,15 @@ const Dispatch: React.FC = () => {
     const fetchRoutes = async () => {
         const { data, error } = await supabase
             .from('delivery_routes')
-            .select('*') // SIMPLIFIED FOR DEBUG: Removed driver join
+            .select(`
+                *,
+                driver:profiles(email, role)
+            `)
             .order('created_at', { ascending: false });
 
         if (error) {
             console.error("Error fetching routes:", error);
-            alert("DEBUG Error fetching routes: " + error.message);
+            // alert("Error fetching routes: " + error.message);
             return;
         }
 
