@@ -874,97 +874,96 @@ const Dispatch: React.FC = () => {
                 )}
             </div>
 
-        </div>
 
-            {/* Modals & Overlays */ }
-    {
-        printingOrder && (
-            <DeliveryNoteTemplate
-                data={printingOrder}
-                onClose={() => setPrintingOrder(null)}
-            />
-        )
-    }
+            {/* Modals & Overlays */}
+            {
+                printingOrder && (
+                    <DeliveryNoteTemplate
+                        data={printingOrder}
+                        onClose={() => setPrintingOrder(null)}
+                    />
+                )
+            }
 
-    {/* Route Details Modal */ }
-    {
-        isDetailsModalOpen && selectedRouteForDetails && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsDetailsModalOpen(false)} />
-                <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
-                    <div className="bg-slate-900 p-8 text-white flex justify-between items-center shrink-0">
-                        <div>
-                            <h3 className="text-2xl font-black italic">{selectedRouteForDetails.name}</h3>
-                            <p className="text-slate-400 text-sm font-bold flex items-center gap-2 mt-1">
-                                <Truck size={14} />
-                                {(selectedRouteForDetails as any).driver?.email || "Sin conductor"}
-                            </p>
-                        </div>
-                        <button onClick={() => setIsDetailsModalOpen(false)} className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-all">
-                            <X size={24} />
-                        </button>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-8 bg-gray-50/50">
-                        {selectedRouteItems === null ? (
-                            <div className="text-center py-20">
-                                <div className="animate-spin w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Cargando pedidos de la ruta...</p>
-                            </div>
-                        ) : selectedRouteItems.length === 0 ? (
-                            <div className="text-center py-20 text-gray-400 space-y-4">
-                                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto text-gray-300">
-                                    <Truck size={32} />
+            {/* Route Details Modal */}
+            {
+                isDetailsModalOpen && selectedRouteForDetails && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsDetailsModalOpen(false)} />
+                        <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+                            <div className="bg-slate-900 p-8 text-white flex justify-between items-center shrink-0">
+                                <div>
+                                    <h3 className="text-2xl font-black italic">{selectedRouteForDetails.name}</h3>
+                                    <p className="text-slate-400 text-sm font-bold flex items-center gap-2 mt-1">
+                                        <Truck size={14} />
+                                        {(selectedRouteForDetails as any).driver?.email || "Sin conductor"}
+                                    </p>
                                 </div>
-                                <p className="font-bold uppercase tracking-widest text-xs">Esta ruta no tiene pedidos asignados</p>
+                                <button onClick={() => setIsDetailsModalOpen(false)} className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-all">
+                                    <X size={24} />
+                                </button>
                             </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {selectedRouteItems.map((item, idx) => (
-                                    <div key={item.id} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-6 group hover:shadow-md transition-all">
-                                        <div className="w-10 h-10 bg-gray-50 rounded-2xl flex items-center justify-center shrink-0 font-black text-gray-300">{idx + 1}</div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">#{item.order?.folio || item.id.slice(0, 8)}</span>
-                                                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${item.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{item.status}</span>
-                                            </div>
-                                            <h4 className="font-bold text-gray-800 truncate">{item.order?.client?.name || "Cliente Desconocido"}</h4>
-                                            <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin size={10} />{item.order?.client?.address || "Sin dirección"}</p>
-                                        </div>
-                                        {item.proof_photo_url ? (
-                                            <div className="relative shrink-0">
-                                                <img src={item.proof_photo_url} alt="Prueba" className="w-20 h-20 object-cover rounded-2xl cursor-zoom-in hover:brightness-75 transition-all shadow-sm" onClick={() => setPhotoViewerUrl(item.proof_photo_url)} />
-                                            </div>
-                                        ) : (
-                                            <div className="w-20 h-20 bg-gray-50 rounded-2xl flex flex-col items-center justify-center text-gray-300 gap-1 border-2 border-dashed border-gray-100">
-                                                <Camera size={16} />
-                                                <span className="text-[8px] font-black">SIN FOTO</span>
-                                            </div>
-                                        )}
-                                        <div className="text-right shrink-0">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Entregado</p>
-                                            <p className="text-xs font-bold text-gray-700">{item.delivered_at ? new Date(item.delivered_at).toLocaleTimeString() : '--:--'}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        )
-    }
 
-    {/* Photo Lightbox */ }
-    {
-        photoViewerUrl && (
-            <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-300">
-                <button onClick={() => setPhotoViewerUrl(null)} className="absolute top-8 right-8 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all z-10"><X size={24} /></button>
-                <img src={photoViewerUrl} alt="Prueba de entrega" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300" />
-            </div>
-        )
-    }
-        </div >
+                            <div className="flex-1 overflow-y-auto p-8 bg-gray-50/50">
+                                {selectedRouteItems === null ? (
+                                    <div className="text-center py-20">
+                                        <div className="animate-spin w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                                        <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Cargando pedidos de la ruta...</p>
+                                    </div>
+                                ) : selectedRouteItems.length === 0 ? (
+                                    <div className="text-center py-20 text-gray-400 space-y-4">
+                                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto text-gray-300">
+                                            <Truck size={32} />
+                                        </div>
+                                        <p className="font-bold uppercase tracking-widest text-xs">Esta ruta no tiene pedidos asignados</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {selectedRouteItems.map((item, idx) => (
+                                            <div key={item.id} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-6 group hover:shadow-md transition-all">
+                                                <div className="w-10 h-10 bg-gray-50 rounded-2xl flex items-center justify-center shrink-0 font-black text-gray-300">{idx + 1}</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">#{item.order?.folio || item.id.slice(0, 8)}</span>
+                                                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${item.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{item.status}</span>
+                                                    </div>
+                                                    <h4 className="font-bold text-gray-800 truncate">{item.order?.client?.name || "Cliente Desconocido"}</h4>
+                                                    <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin size={10} />{item.order?.client?.address || "Sin dirección"}</p>
+                                                </div>
+                                                {item.proof_photo_url ? (
+                                                    <div className="relative shrink-0">
+                                                        <img src={item.proof_photo_url} alt="Prueba" className="w-20 h-20 object-cover rounded-2xl cursor-zoom-in hover:brightness-75 transition-all shadow-sm" onClick={() => setPhotoViewerUrl(item.proof_photo_url)} />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-20 h-20 bg-gray-50 rounded-2xl flex flex-col items-center justify-center text-gray-300 gap-1 border-2 border-dashed border-gray-100">
+                                                        <Camera size={16} />
+                                                        <span className="text-[8px] font-black">SIN FOTO</span>
+                                                    </div>
+                                                )}
+                                                <div className="text-right shrink-0">
+                                                    <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Entregado</p>
+                                                    <p className="text-xs font-bold text-gray-700">{item.delivered_at ? new Date(item.delivered_at).toLocaleTimeString() : '--:--'}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Photo Lightbox */}
+            {
+                photoViewerUrl && (
+                    <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-300">
+                        <button onClick={() => setPhotoViewerUrl(null)} className="absolute top-8 right-8 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all z-10"><X size={24} /></button>
+                        <img src={photoViewerUrl} alt="Prueba de entrega" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300" />
+                    </div>
+                )
+            }
+        </div>
     );
 };
 
