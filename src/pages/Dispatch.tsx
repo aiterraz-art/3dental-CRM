@@ -311,7 +311,7 @@ const Dispatch: React.FC = () => {
                 .insert({
                     name: routeName,
                     driver_id: selectedDriverId || null,
-                    status: 'active',
+                    status: 'in_progress',
                 })
                 .select()
                 .single();
@@ -609,8 +609,8 @@ const Dispatch: React.FC = () => {
                             onClick={handleCreateRoute}
                             disabled={submitting || selectedOrdersForRoute.size === 0}
                             className={`px-8 py-3 rounded-xl font-black text-lg shadow-lg flex items-center transition-all active:scale-95 ${submitting || selectedOrdersForRoute.size === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' :
-                                    !selectedDriverId ? 'bg-gray-800 text-gray-500 cursor-not-allowed' :
-                                        'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+                                !selectedDriverId ? 'bg-gray-800 text-gray-500 cursor-not-allowed' :
+                                    'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
                                 }`}
                             title={!selectedDriverId ? "Selecciona un conductor primero" : ""}
                         >
