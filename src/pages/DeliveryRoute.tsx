@@ -65,22 +65,32 @@ const DeliveryRoute: React.FC = () => {
 
             const routeIds = myRoutes.map(r => r.id);
 
-            // 2. Get Orders for these routes
+            // 2. Get Route Items (Source of Truth) linked to Orders and Clients
             const { data, error } = await supabase
-                .from('orders')
+                .from('route_items')
                 .select(`
-                    id, status, delivery_status, total_amount, folio,
-                    client:clients(name, address, phone, lat, lng)
+                    id, status, sequence_order, notes,
+                    order:orders!inner (
+                        id, folio, total_amount, delivery_status,
+                        client:clients (name, address, phone, lat, lng)
+                    )
                 `)
                 .in('route_id', routeIds)
-                .in('delivery_status', ['pending', 'out_for_delivery']);
+                .in('status', ['pending', 'rescheduled']); // Show pending items
 
             if (error) throw error;
 
-            // Client-side filter for now if status logic is complex, or use strictly out_for_delivery
-            const validOrders = (data || []).filter(o => o.delivery_status === 'out_for_delivery');
+            // Map structure to flat format for component
+            const mappedOrders = (data || []).map((item: any) => ({
+                id: item.order.id, // Keep order ID as primary key for actions
+                route_item_id: item.id,
+                status: item.status,
+                delivery_status: item.order.delivery_status,
+                client: item.order.client,
+                folio: item.order.folio
+            }));
 
-            setOrders(validOrders);
+            setOrders(mappedOrders);
 
         } catch (err) {
             console.error("Error fetching route:", err);
