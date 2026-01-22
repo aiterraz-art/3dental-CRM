@@ -48,9 +48,15 @@ const DeliveryRoute: React.FC = () => {
                 .from('delivery_routes')
                 .select('id, name')
                 .eq('driver_id', profile.id)
-                .in('status', ['active', 'in_progress']) // Support both statuses just in case
+                .in('status', ['active', 'in_progress']);
 
-            if (routeError) throw routeError;
+            if (routeError) {
+                console.error("Error fetching routes:", routeError);
+                throw routeError;
+            }
+
+            // Expose for debug
+            (window as any)._debugRoutes = myRoutes;
 
             if (!myRoutes || myRoutes.length === 0) {
                 setOrders([]);
@@ -66,11 +72,12 @@ const DeliveryRoute: React.FC = () => {
             const routeIds = myRoutes.map(r => r.id);
 
             // 2. Get Route Items (Source of Truth) linked to Orders and Clients
+            // REMOVED !inner to allow debugging if orders are returning null due to RLS
             const { data, error } = await supabase
                 .from('route_items')
                 .select(`
                     id, status, sequence_order, notes,
-                    order:orders!inner (
+                    order:orders (
                         id, folio, total_amount, delivery_status,
                         client:clients (name, address, phone, lat, lng)
                     )
@@ -78,23 +85,36 @@ const DeliveryRoute: React.FC = () => {
                 .in('route_id', routeIds)
                 .in('status', ['pending', 'rescheduled']); // Show pending items
 
-            if (error) throw error;
+            if (error) {
+                console.error("Error fetching items:", error);
+                throw error;
+            }
 
             // Map structure to flat format for component
-            const mappedOrders = (data || []).map((item: any) => ({
-                id: item.order.id, // Keep order ID as primary key for actions
-                route_item_id: item.id,
-                status: item.status,
-                delivery_status: item.order.delivery_status,
-                client: item.order.client,
-                folio: item.order.folio
-            }));
+            const mappedOrders = (data || []).map((item: any) => {
+                if (!item.order) {
+                    // This indicates RLS block on orders table or broken link
+                    console.warn("Item without order visible:", item);
+                    return null;
+                }
+                return {
+                    id: item.order.id, // Keep order ID as primary key for actions
+                    route_item_id: item.id,
+                    status: item.status,
+                    delivery_status: item.order.delivery_status,
+                    client: item.order.client || {}, // Safe fallback
+                    folio: item.order.folio
+                };
+            }).filter(Boolean); // Remove nulls
 
             setOrders(mappedOrders);
+            (window as any)._debugItems = data; // Raw items for debug
 
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error fetching route:", err);
+            setRouteName("Error de Carga");
             setOrders([]);
+            alert("Error cargando ruta: " + err.message);
         } finally {
             setLoading(false);
         }
@@ -391,12 +411,13 @@ const DeliveryRoute: React.FC = () => {
             <div className="m-4 p-4 bg-gray-100 rounded-2xl text-[10px] font-mono text-gray-600 overflow-x-auto border border-gray-300">
                 <p className="font-bold text-gray-900 mb-2">🔍 DEBUG INFO (Para Soporte)</p>
                 <p>Profile ID: {profile?.id}</p>
-                <p>Profile Role: {profile?.role}</p>
+                <p>Route Name: {routeName}</p>
+                <p>Raw Routes Found: {(window as any)._debugRoutes?.length || 0}</p>
                 <p>Orders Count: {orders.length}</p>
-                <p>Loading: {loading ? 'YES' : 'NO'}</p>
+                <p>Status: {loading ? 'LOADING' : 'READY'}</p>
                 <details>
-                    <summary className="cursor-pointer font-bold text-indigo-600 mt-2">Ver Raw Data</summary>
-                    <pre>{JSON.stringify(orders, null, 2)}</pre>
+                    <summary className="cursor-pointer font-bold text-indigo-600 mt-2">Ver Raw Items (Full)</summary>
+                    <pre>{JSON.stringify((window as any)._debugItems || [], null, 2)}</pre>
                 </details>
             </div>
         </div>
