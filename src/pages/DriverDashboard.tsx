@@ -48,7 +48,7 @@ const DriverDashboard: React.FC = () => {
         };
 
         fetchStats();
-    }, []);
+    }, [profile?.id]);
 
     return (
         <div className="space-y-8 max-w-lg mx-auto pb-20">
