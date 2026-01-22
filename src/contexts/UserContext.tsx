@@ -18,6 +18,15 @@ interface UserContextType {
     effectiveRole: string | null;
     canImpersonate: boolean;
     realRole: string | null;
+    isManager: boolean;
+    isChief: boolean;
+    isAdminOps: boolean;
+    isSeller: boolean;
+    isDriver: boolean;
+    canUploadData: boolean;
+    canViewMetas: boolean;
+    hasPermission: (permission: string) => boolean;
+    permissions: string[];
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -26,6 +35,33 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [impersonatedUser, setImpersonatedUser] = useState<Profile | null>(null);
+    const [permissions, setPermissions] = useState<string[]>([]);
+
+    const fetchPermissions = async (role: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('role_permissions')
+                .select('permission')
+                .eq('role', role);
+
+            if (data && data.length > 0) {
+                setPermissions(data.map(p => p.permission));
+            } else {
+                // FALLBACK DEFAULTS until migration is applied
+                const defaults: Record<string, string[]> = {
+                    'manager': ['UPLOAD_EXCEL', 'MANAGE_INVENTORY', 'MANAGE_PRICING', 'VIEW_METAS', 'MANAGE_METAS', 'MANAGE_DISPATCH', 'EXECUTE_DELIVERY', 'MANAGE_USERS', 'MANAGE_PERMISSIONS'],
+                    'jefe': ['MANAGE_INVENTORY', 'VIEW_METAS', 'MANAGE_DISPATCH'],
+                    'administrativo': ['UPLOAD_EXCEL', 'MANAGE_INVENTORY', 'MANAGE_PRICING', 'MANAGE_DISPATCH'],
+                    'seller': ['VIEW_METAS'],
+                    'driver': ['EXECUTE_DELIVERY']
+                };
+                setPermissions(defaults[role] || []);
+            }
+        } catch (err) {
+            console.error("Error fetching permissions:", err);
+            setPermissions([]);
+        }
+    };
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -111,6 +147,15 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => authListener.subscription.unsubscribe();
     }, []);
 
+    useEffect(() => {
+        const role = (impersonatedUser || profile)?.role;
+        if (role) {
+            fetchPermissions(role);
+        } else {
+            setPermissions([]);
+        }
+    }, [profile?.role, impersonatedUser?.role]);
+
     const getRoleBase = (r: string | null | undefined) => (r || '').trim().toLowerCase();
 
     const baseRealRole = getRoleBase(profile?.role);
@@ -120,8 +165,21 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const effectiveProfile = impersonatedUser || profile;
     const effectiveRole = getRoleBase(effectiveProfile?.role);
 
-    const isSupervisor = ['admin', 'jefe', 'supervisor', 'manager'].includes(effectiveRole);
-    const canImpersonate = ['admin', 'jefe', 'supervisor', 'manager'].includes(baseRealRole);
+    const isManager = effectiveRole === 'manager';
+    const isChief = effectiveRole === 'jefe';
+    const isAdminOps = effectiveRole === 'administrativo';
+    const isSeller = effectiveRole === 'seller';
+    const isDriver = effectiveRole === 'driver';
+
+    const isSupervisor = ['admin', 'jefe', 'supervisor', 'manager'].includes(effectiveRole || '');
+    const canImpersonate = ['admin', 'jefe', 'supervisor', 'manager'].includes(baseRealRole || '');
+
+    // Dynamic Permissions
+    const hasPermission = (perm: string) => permissions.includes(perm);
+
+    // Granular Permissions (Backward compatibility)
+    const canUploadData = permissions.includes('UPLOAD_EXCEL');
+    const canViewMetas = permissions.includes('VIEW_METAS');
 
     const impersonateUser = async (email: string) => {
         // 1. Try to fetch real profile first
@@ -192,7 +250,16 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             stopImpersonation,
             effectiveRole,
             canImpersonate,
-            realRole
+            realRole,
+            isManager,
+            isChief,
+            isAdminOps,
+            isSeller,
+            isDriver,
+            canUploadData,
+            canViewMetas,
+            hasPermission,
+            permissions
         }}>
             {children}
         </UserContext.Provider>

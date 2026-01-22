@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { read, utils } from 'xlsx';
-import { Truck, Upload, AlertCircle, CheckCircle2, Map as MapIcon, Calendar, Printer, X, Camera, ChevronRight, User, MapPin } from 'lucide-react';
+import { Truck, Upload, AlertCircle, CheckCircle2, Map as MapIcon, Calendar, Printer, X, Camera, ChevronRight, User, MapPin, Download } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import DeliveryNoteTemplate from '../components/DeliveryNoteTemplate';
@@ -42,6 +42,7 @@ interface DriverProfile {
 }
 
 const Dispatch: React.FC = () => {
+    const { profile, hasPermission } = useUser();
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [processedRows, setProcessedRows] = useState<DeliveryRow[]>([]);
@@ -66,6 +67,24 @@ const Dispatch: React.FC = () => {
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [selectedRouteForDetails, setSelectedRouteForDetails] = useState<DeliveryRoute | null>(null);
     const [photoViewerUrl, setPhotoViewerUrl] = useState<string | null>(null);
+
+    const handleDownloadImage = async (url: string, filename: string) => {
+        try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename || 'entrega.jpg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            console.error("Error downloading image:", error);
+            alert("No se pudo descargar la imagen.");
+        }
+    };
 
     // Google Maps Hooks
     const map = useMap("DISPATCH_MAP");
@@ -607,10 +626,13 @@ const Dispatch: React.FC = () => {
                             type="file"
                             accept=".xlsx, .xls"
                             onChange={handleFileUpload}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            disabled={uploading || submitting}
+                            className={`absolute inset-0 w-full h-full opacity-0 z-10 ${!hasPermission('UPLOAD_EXCEL') ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                            disabled={uploading || submitting || !hasPermission('UPLOAD_EXCEL')}
                         />
-                        <button className="bg-emerald-500 text-white px-8 py-4 rounded-2xl font-bold flex items-center shadow-xl shadow-emerald-100 hover:bg-emerald-600 transition-all active:scale-95">
+                        <button
+                            className={`${!hasPermission('UPLOAD_EXCEL') ? 'bg-gray-400' : 'bg-emerald-500 hover:bg-emerald-600'} text-white px-8 py-4 rounded-2xl font-bold flex items-center shadow-xl shadow-emerald-100 transition-all active:scale-95`}
+                            title={!hasPermission('UPLOAD_EXCEL') ? "No tienes permisos para cargar archivos" : ""}
+                        >
                             <Upload size={20} className="mr-3" />
                             {uploading ? 'Procesando...' : 'Cargar Excel'}
                         </button>
@@ -931,8 +953,23 @@ const Dispatch: React.FC = () => {
                                                     <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><MapPin size={10} />{item.order?.client?.address || "Sin dirección"}</p>
                                                 </div>
                                                 {item.proof_photo_url ? (
-                                                    <div className="relative shrink-0">
-                                                        <img src={item.proof_photo_url} alt="Prueba" className="w-20 h-20 object-cover rounded-2xl cursor-zoom-in hover:brightness-75 transition-all shadow-sm" onClick={() => setPhotoViewerUrl(item.proof_photo_url)} />
+                                                    <div className="relative shrink-0 group/photo">
+                                                        <img
+                                                            src={item.proof_photo_url}
+                                                            alt="Prueba"
+                                                            className="w-20 h-20 object-cover rounded-2xl cursor-zoom-in hover:brightness-75 transition-all shadow-sm"
+                                                            onClick={() => setPhotoViewerUrl(item.proof_photo_url)}
+                                                        />
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDownloadImage(item.proof_photo_url, `entrega_folio_${item.order?.folio || item.id.slice(0, 8)}.jpg`);
+                                                            }}
+                                                            className="absolute top-1 right-1 w-6 h-6 bg-white/90 rounded-lg flex items-center justify-center text-indigo-600 opacity-0 group-hover/photo:opacity-100 transition-opacity shadow-lg"
+                                                            title="Descargar Foto"
+                                                        >
+                                                            <Download size={14} />
+                                                        </button>
                                                     </div>
                                                 ) : (
                                                     <div className="w-20 h-20 bg-gray-50 rounded-2xl flex flex-col items-center justify-center text-gray-300 gap-1 border-2 border-dashed border-gray-100">
@@ -958,7 +995,21 @@ const Dispatch: React.FC = () => {
             {
                 photoViewerUrl && (
                     <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-300">
-                        <button onClick={() => setPhotoViewerUrl(null)} className="absolute top-8 right-8 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all z-10"><X size={24} /></button>
+                        <div className="absolute top-8 right-8 flex gap-4">
+                            <button
+                                onClick={() => handleDownloadImage(photoViewerUrl, `entrega_grande.jpg`)}
+                                className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all z-10"
+                                title="Descargar"
+                            >
+                                <Download size={24} />
+                            </button>
+                            <button
+                                onClick={() => setPhotoViewerUrl(null)}
+                                className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all z-10"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
                         <img src={photoViewerUrl} alt="Prueba de entrega" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300" />
                     </div>
                 )

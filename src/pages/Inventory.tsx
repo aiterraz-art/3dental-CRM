@@ -8,12 +8,21 @@ import Papa from 'papaparse';
 type InventoryItem = Database['public']['Tables']['inventory']['Row'] & { sku?: string | null };
 
 const Inventory = () => {
-    const { isSupervisor } = useUser();
+    const { isSupervisor, hasPermission } = useUser();
     const [items, setItems] = useState<InventoryItem[]>([]);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [isImporting, setIsImporting] = useState(false);
     const [importType, setImportType] = useState<'inventory' | 'pricing' | null>(null);
+    const [showNewProductModal, setShowNewProductModal] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [newProduct, setNewProduct] = useState({
+        sku: '',
+        name: '',
+        price: 0,
+        stock_qty: 0,
+        category: 'General'
+    });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const fetchInventory = async () => {
@@ -145,6 +154,39 @@ const Inventory = () => {
         });
     };
 
+    const handleCreateProduct = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newProduct.sku || !newProduct.name) {
+            alert("SKU y Nombre son obligatorios");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const { error } = await supabase
+                .from('inventory')
+                .insert([newProduct]);
+
+            if (error) throw error;
+
+            alert("Producto creado exitosamente");
+            setShowNewProductModal(false);
+            setNewProduct({
+                sku: '',
+                name: '',
+                price: 0,
+                stock_qty: 0,
+                category: 'General'
+            });
+            fetchInventory();
+        } catch (error: any) {
+            console.error("Error creating product:", error);
+            alert(`Error al crear producto: ${error.message}`);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const filteredItems = items.filter(i =>
         (i.name?.toLowerCase() || '').includes(search.toLowerCase()) ||
         (i.sku?.toLowerCase() || '').includes(search.toLowerCase())
@@ -209,7 +251,7 @@ const Inventory = () => {
                         onChange={(e) => setSearch(e.target.value)}
                     />
                 </div>
-                {isSupervisor && (
+                {hasPermission('UPLOAD_EXCEL') && (
                     <div className="flex items-center space-x-3">
                         <button
                             onClick={() => handleImportClick('inventory')}
@@ -235,7 +277,10 @@ const Inventory = () => {
                             )}
                             Cargar Lista Precios
                         </button>
-                        <button className="bg-indigo-600 text-white px-6 py-4 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all">
+                        <button
+                            onClick={() => setShowNewProductModal(true)}
+                            className="bg-indigo-600 text-white px-6 py-4 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all"
+                        >
                             <Plus size={18} className="mr-2" />
                             Nuevo Producto
                         </button>
@@ -263,7 +308,7 @@ const Inventory = () => {
                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">SKU</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Stock</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Precio</th>
-                                {isSupervisor && <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Acciones</th>}
+                                {hasPermission('MANAGE_INVENTORY') && <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Acciones</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -291,7 +336,7 @@ const Inventory = () => {
                                     <td className="px-6 py-5 text-center text-sm font-bold text-gray-900">
                                         ${item.price?.toLocaleString()}
                                     </td>
-                                    {isSupervisor && (
+                                    {hasPermission('MANAGE_INVENTORY') && (
                                         <td className="px-6 py-5 text-right">
                                             <div className="flex justify-end gap-2">
                                                 <button
@@ -375,6 +420,86 @@ const Inventory = () => {
                                 </table>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* New Product Modal */}
+            {showNewProductModal && (
+                <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+                        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Nuevo Producto</h3>
+                            <button onClick={() => setShowNewProductModal(false)} className="p-2 hover:bg-white/20 rounded-full transition-all">
+                                <Plus size={20} className="rotate-45" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateProduct} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Código SKU</label>
+                                <input
+                                    type="text"
+                                    required
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={newProduct.sku}
+                                    onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Nombre del Producto</label>
+                                <input
+                                    type="text"
+                                    required
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={newProduct.name}
+                                    onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Precio Neto</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={newProduct.price}
+                                        onChange={e => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Stock Inicial</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={newProduct.stock_qty}
+                                        onChange={e => setNewProduct({ ...newProduct, stock_qty: parseInt(e.target.value) })}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Categoría</label>
+                                <select
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={newProduct.category}
+                                    onChange={e => setNewProduct({ ...newProduct, category: e.target.value })}
+                                >
+                                    <option value="General">General</option>
+                                    <option value="Insumos">Insumos</option>
+                                    <option value="Equipos">Equipos</option>
+                                    <option value="Repuestos">Repuestos</option>
+                                </select>
+                            </div>
+                            <div className="pt-4">
+                                <button
+                                    type="submit"
+                                    disabled={isSaving}
+                                    className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                                >
+                                    {isSaving ? "Guardando..." : "Crear Producto"}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

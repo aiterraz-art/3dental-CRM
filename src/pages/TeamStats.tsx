@@ -5,7 +5,7 @@ import { Users, TrendingUp, Calendar, MapPin, ChevronRight, LayoutDashboard, Clo
 import { Link, Navigate } from 'react-router-dom';
 
 const TeamStats = () => {
-    const { isSupervisor, loading: userLoading, profile: currentUser } = useUser();
+    const { isSupervisor, hasPermission, loading: userLoading, profile: currentUser } = useUser();
     const [teamData, setTeamData] = useState<any[]>([]);
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [stats, setStats] = useState({
@@ -225,11 +225,13 @@ const TeamStats = () => {
                     <p className="text-3xl font-black text-gray-900">{stats.pendingApprovals}</p>
                     <p className="text-xs text-gray-400 font-bold mt-2">Pending order reviews</p>
                 </div>
-                <div className="premium-card p-6 border-l-4 border-l-green-500">
-                    <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-1">Sales Pipeline</p>
-                    <p className="text-3xl font-black text-gray-900">${stats.teamValue.toLocaleString()}</p>
-                    <p className="text-xs text-gray-400 font-bold mt-2">MTD Team Revenue</p>
-                </div>
+                {hasPermission('VIEW_METAS') && (
+                    <div className="premium-card p-6 border-l-4 border-l-green-500">
+                        <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-1">Sales Pipeline</p>
+                        <p className="text-3xl font-black text-gray-900">${stats.teamValue.toLocaleString()}</p>
+                        <p className="text-xs text-gray-400 font-bold mt-2">MTD Team Revenue</p>
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -269,13 +271,15 @@ const TeamStats = () => {
                                         </div>
 
                                         <div className="flex space-x-2">
-                                            <button
-                                                onClick={() => handleOpenGoalModal(rep)}
-                                                className="p-3 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-500 hover:text-white transition-all shadow-sm"
-                                                title="Set Monthly Goal"
-                                            >
-                                                <TrendingUp size={16} />
-                                            </button>
+                                            {hasPermission('MANAGE_METAS') && (
+                                                <button
+                                                    onClick={() => handleOpenGoalModal(rep)}
+                                                    className="p-3 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-500 hover:text-white transition-all shadow-sm"
+                                                    title="Set Monthly Goal"
+                                                >
+                                                    <TrendingUp size={16} />
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => { setSelectedRep(rep); setShowTaskModal(true); }}
                                                 className="p-3 bg-dental-50 text-dental-600 rounded-xl hover:bg-dental-600 hover:text-white transition-all shadow-sm"
@@ -299,9 +303,11 @@ const TeamStats = () => {
                                         <div className="bg-gray-50 p-3 rounded-2xl text-center">
                                             <p className="text-[9px] font-bold text-gray-400 uppercase">Sales</p>
                                             <p className="text-sm font-black text-dental-600">
-                                                ${rep.visits?.reduce((accV: number, visit: any) => {
-                                                    return accV + (visit.orders?.reduce((accO: number, order: any) => accO + (order.total_amount || 0), 0) || 0);
-                                                }, 0).toLocaleString()}
+                                                {hasPermission('VIEW_METAS') ? (
+                                                    `$${rep.visits?.reduce((accV: number, visit: any) => {
+                                                        return accV + (visit.orders?.reduce((accO: number, order: any) => accO + (order.total_amount || 0), 0) || 0);
+                                                    }, 0).toLocaleString()}`
+                                                ) : '***'}
                                             </p>
                                         </div>
                                     </div>
