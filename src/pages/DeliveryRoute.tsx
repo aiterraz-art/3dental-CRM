@@ -111,10 +111,6 @@ const DeliveryRoute: React.FC = () => {
                 throw routeError;
             }
 
-            // Expose for debug
-            // Expose for debug
-            // (window as any)._debugRoutes = myRoutes;
-
             if (!myRoutes || myRoutes.length === 0) {
                 setOrders([]);
                 setRouteName("Sin Ruta Asignada");
@@ -122,14 +118,13 @@ const DeliveryRoute: React.FC = () => {
                 return;
             }
 
-            // Set Route Name (if multiple, join them or show "Rutas Múltiples")
+            // Set Route Name
             const names = myRoutes.map(r => r.name).join(", ");
             setRouteName(names || "Ruta de Hoy");
 
             const routeIds = myRoutes.map(r => r.id);
 
-            // 2. Get Route Items (Source of Truth) linked to Orders and Clients
-            // REMOVED !inner to allow debugging if orders are returning null due to RLS
+            // 2. Get Route Items
             const { data, error } = await supabase
                 .from('route_items')
                 .select(`
@@ -139,7 +134,6 @@ const DeliveryRoute: React.FC = () => {
                         client:clients (name, address, phone, lat, lng)
                     )
                 `)
-                .in('route_id', routeIds)
                 .in('route_id', routeIds)
                 .in('status', ['pending', 'rescheduled'])
                 .order('sequence_order', { ascending: true }); // Ensure fixed order
@@ -152,7 +146,6 @@ const DeliveryRoute: React.FC = () => {
             // Map structure to flat format for component
             const mappedOrders = (data || []).map((item: any) => {
                 if (!item.order) {
-                    // This indicates RLS block on orders table or broken link
                     console.warn("Item without order visible:", item);
                     return null;
                 }
@@ -167,14 +160,12 @@ const DeliveryRoute: React.FC = () => {
             }).filter(Boolean); // Remove nulls
 
             setOrders(mappedOrders);
-            setOrders(mappedOrders);
-            // (window as any)._debugItems = data; // REMOVED
 
         } catch (err: any) {
             console.error("Error fetching route:", err);
             setRouteName("Error de Carga");
             setOrders([]);
-            alert("Error cargando ruta: " + err.message);
+            // alert("Error cargando ruta: " + err.message);
         } finally {
             setLoading(false);
         }
@@ -192,7 +183,7 @@ const DeliveryRoute: React.FC = () => {
             );
             return () => navigator.geolocation.clearWatch(watchId);
         }
-    }, []);
+    }, [profile?.id]); // Re-fetch if profile changes (Impersonation)
 
     // Debug: Teleport function
     const handleTeleport = (lat: number, lng: number) => {
@@ -424,7 +415,6 @@ const DeliveryRoute: React.FC = () => {
                 </div>
             )}
 
-            {/* Delivery Modal */}
             {/* Delivery Modal */}
             {selectedOrder && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
