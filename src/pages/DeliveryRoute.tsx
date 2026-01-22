@@ -48,7 +48,7 @@ const DeliveryRoute: React.FC = () => {
                 .from('delivery_routes')
                 .select('id, name')
                 .eq('driver_id', profile.id)
-                .in('status', ['active', 'in_progress']);
+                .eq('status', 'in_progress');
 
             if (routeError) {
                 console.error("Error fetching routes:", routeError);
