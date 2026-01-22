@@ -91,13 +91,16 @@ const Dispatch: React.FC = () => {
     const fetchRoutes = async () => {
         const { data, error } = await supabase
             .from('delivery_routes')
-            .select(`
-                *,
-                driver:profiles(email, role)
-            `)
+            .select('*') // SIMPLIFIED FOR DEBUG: Removed driver join
             .order('created_at', { ascending: false });
 
-        if (!error && data) {
+        if (error) {
+            console.error("Error fetching routes:", error);
+            alert("DEBUG Error fetching routes: " + error.message);
+            return;
+        }
+
+        if (data) {
             // Get order counts from route_items
             const routesWithCounts = await Promise.all(data.map(async (route) => {
                 const { count } = await supabase.from('route_items').select('*', { count: 'exact', head: true }).eq('route_id', route.id);
