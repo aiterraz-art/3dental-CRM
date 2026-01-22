@@ -387,6 +387,18 @@ const DeliveryRoute: React.FC = () => {
                     </div>
                 </div>
             )}
+            {/* DEBUG PANEL */}
+            <div className="m-4 p-4 bg-gray-100 rounded-2xl text-[10px] font-mono text-gray-600 overflow-x-auto border border-gray-300">
+                <p className="font-bold text-gray-900 mb-2">🔍 DEBUG INFO (Para Soporte)</p>
+                <p>Profile ID: {profile?.id}</p>
+                <p>Profile Role: {profile?.role}</p>
+                <p>Orders Count: {orders.length}</p>
+                <p>Loading: {loading ? 'YES' : 'NO'}</p>
+                <details>
+                    <summary className="cursor-pointer font-bold text-indigo-600 mt-2">Ver Raw Data</summary>
+                    <pre>{JSON.stringify(orders, null, 2)}</pre>
+                </details>
+            </div>
         </div>
     );
 };
