@@ -277,10 +277,25 @@ const Dispatch: React.FC = () => {
         setSelectedOrdersForRoute(newSet);
     };
 
+    const handleSelectAll = (selectAll: boolean) => {
+        if (selectAll) {
+            const allIds = matchedOrders.map(o => o.id);
+            setSelectedOrdersForRoute(new Set(allIds));
+        } else {
+            setSelectedOrdersForRoute(new Set());
+        }
+    };
+
     const handleCreateRoute = async () => {
         // Validate items selected
         if (selectedOrdersForRoute.size === 0) {
             alert("Selecciona al menos un pedido para crear una ruta.");
+            return;
+        }
+
+        // Validate Driver (MANDATORY REQUEST)
+        if (!selectedDriverId) {
+            alert("⚠️ Debes asignar un conductor obligatoriamente antes de iniciar la ruta.");
             return;
         }
 
@@ -296,7 +311,7 @@ const Dispatch: React.FC = () => {
                 .insert({
                     name: routeName,
                     driver_id: selectedDriverId || null,
-                    status: 'draft',
+                    status: 'active',
                 })
                 .select()
                 .single();
@@ -550,23 +565,31 @@ const Dispatch: React.FC = () => {
 
             {/* Action Bar */}
             {matchedOrders.length > 0 && (
-                <div className="flex justify-end">
-                    <button
-                        onClick={handleStartDispatch}
-                        disabled={submitting}
-                        className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center"
-                    >
-                        <Truck className="mr-3" size={24} />
-                        {submitting ? 'Iniciando...' : `Iniciar Ruta (${matchedOrders.length} Pedidos)`}
-                    </button>
-                    {selectedOrdersForRoute.size > 0 && (
-                        <div className="flex items-center gap-2 ml-4 bg-gray-100 p-2 rounded-2xl">
+                <div className="bg-white p-6 rounded-3xl shadow-xl border border-indigo-100 flex flex-col md:flex-row justify-between items-center gap-4 sticky bottom-6 z-40">
+
+                    <div className="flex items-center gap-4 w-full md:w-auto">
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={matchedOrders.length > 0 && selectedOrdersForRoute.size === matchedOrders.length}
+                                onChange={(e) => handleSelectAll(e.target.checked)}
+                                className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <span className="font-bold text-gray-700">Seleccionar Todos ({matchedOrders.length})</span>
+                        </div>
+                        <span className="text-gray-300">|</span>
+                        <span className="font-bold text-indigo-600">{selectedOrdersForRoute.size} Seleccionados</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full md:w-auto">
+                        <div className="relative flex-1 md:flex-none">
                             <select
                                 value={selectedDriverId}
                                 onChange={(e) => setSelectedDriverId(e.target.value)}
-                                className="bg-transparent border-none text-sm font-bold text-gray-700 focus:ring-0 cursor-pointer"
+                                className={`w-full md:w-64 pl-4 pr-10 py-3 rounded-xl appearance-none font-bold outline-none ring-2 transition-all cursor-pointer ${!selectedDriverId ? 'ring-red-200 bg-red-50 text-red-500 animate-pulse' : 'ring-gray-100 bg-gray-50 text-gray-800'
+                                    }`}
                             >
-                                <option value="">-- Asignar Conductor --</option>
+                                <option value="">-- Asignar Conductor (Requerido) --</option>
                                 {drivers.length > 0 ? (
                                     drivers.map(d => (
                                         <option key={d.id} value={d.id}>
@@ -577,16 +600,24 @@ const Dispatch: React.FC = () => {
                                     <option disabled>No hay conductores disponibles</option>
                                 )}
                             </select>
-                            <button
-                                onClick={handleCreateRoute}
-                                disabled={submitting}
-                                className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-lg shadow-lg hover:bg-slate-900 active:scale-95 transition-all flex items-center"
-                            >
-                                <MapIcon className="mr-3" size={20} />
-                                Crear Ruta ({selectedOrdersForRoute.size})
-                            </button>
+                            <div className="absolute right-3 top-3.5 pointer-events-none text-gray-400">
+                                <Truck size={16} />
+                            </div>
                         </div>
-                    )}
+
+                        <button
+                            onClick={handleCreateRoute}
+                            disabled={submitting || selectedOrdersForRoute.size === 0}
+                            className={`px-8 py-3 rounded-xl font-black text-lg shadow-lg flex items-center transition-all active:scale-95 ${submitting || selectedOrdersForRoute.size === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' :
+                                    !selectedDriverId ? 'bg-gray-800 text-gray-500 cursor-not-allowed' :
+                                        'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+                                }`}
+                            title={!selectedDriverId ? "Selecciona un conductor primero" : ""}
+                        >
+                            <MapIcon className="mr-2" size={20} />
+                            {submitting ? 'Procesando...' : 'Crear & Iniciar Ruta'}
+                        </button>
+                    </div>
                 </div>
             )}
 
