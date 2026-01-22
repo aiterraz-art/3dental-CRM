@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { useUser } from '../contexts/UserContext';
 import { MapPin, Phone, CheckCircle2, Camera, Navigation, ArrowLeft, AlertTriangle } from 'lucide-react';
-import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
+import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 
 // Helper for distance calc (Haversine formula)
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -18,6 +18,62 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
+};
+
+// Internal Component for Directions
+const Directions = ({ orders, userLocation }: { orders: any[], userLocation: { lat: number, lng: number } | null }) => {
+    const map = useMap();
+    const routesLibrary = useMapsLibrary('routes');
+    const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService>();
+    const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer>();
+
+    useEffect(() => {
+        if (!routesLibrary || !map) return;
+        setDirectionsService(new routesLibrary.DirectionsService());
+        setDirectionsRenderer(new routesLibrary.DirectionsRenderer({
+            map,
+            suppressMarkers: true, // We use our own custom AdvancedMarkers
+            polylineOptions: { strokeColor: "#4F46E5", strokeWeight: 5, strokeOpacity: 0.8 }
+        }));
+    }, [routesLibrary, map]);
+
+    useEffect(() => {
+        if (!directionsService || !directionsRenderer || orders.length === 0) return;
+
+        const validOrders = orders.filter(o => o.client?.lat && o.client?.lng);
+        if (validOrders.length === 0) return;
+
+        // Origin: User location or first order
+        const origin = userLocation
+            ? { lat: userLocation.lat, lng: userLocation.lng }
+            : { lat: Number(validOrders[0].client.lat), lng: Number(validOrders[0].client.lng) };
+
+        // Destination: Last order
+        const lastOrder = validOrders[validOrders.length - 1];
+        const destination = { lat: Number(lastOrder.client.lat), lng: Number(lastOrder.client.lng) };
+
+        // Waypoints: All orders except last (Google requires origin/dest separate)
+        const waypoints = validOrders.slice(0, -1).map(order => ({
+            location: { lat: Number(order.client.lat), lng: Number(order.client.lng) },
+            stopover: true
+        }));
+
+        // Limit waypoints to 25 (Google API Limit)
+        const limitedWaypoints = waypoints.slice(0, 25);
+
+        directionsService.route({
+            origin,
+            destination,
+            waypoints: limitedWaypoints,
+            travelMode: google.maps.TravelMode.DRIVING,
+            optimizeWaypoints: true // Google's recommended order
+        }).then(response => {
+            directionsRenderer.setDirections(response);
+        }).catch(err => console.error("Directions request failed", err));
+
+    }, [directionsService, directionsRenderer, orders, userLocation]);
+
+    return null;
 };
 
 const DeliveryRoute: React.FC = () => {
