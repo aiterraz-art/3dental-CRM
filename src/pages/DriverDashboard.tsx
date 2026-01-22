@@ -14,17 +14,31 @@ const DriverDashboard: React.FC = () => {
 
     useEffect(() => {
         const fetchStats = async () => {
-            // In a real app, filter by driver_id. Here we count global for simulation.
-            const today = new Date().toISOString().split('T')[0];
+            if (!profile?.id) return;
 
-            const { data } = await supabase
-                .from('orders')
-                .select('delivery_status, created_at')
-                .gte('created_at', `${today}T00:00:00`);
+            // 1. Get active routes for this driver (Use profile.id for impersonation)
+            const { data: routes } = await supabase
+                .from('delivery_routes')
+                .select('id')
+                .eq('driver_id', profile.id)
+                .in('status', ['active', 'in_progress']); // active implies assigned
 
-            if (data) {
-                const pending = data.filter(o => o.delivery_status === 'out_for_delivery').length;
-                const delivered = data.filter(o => o.delivery_status === 'delivered').length;
+            const routeIds = routes?.map(r => r.id) || [];
+
+            if (routeIds.length === 0) {
+                setStats({ pending: 0, delivered: 0, total: 0 });
+                return;
+            }
+
+            // 2. Count items in those routes
+            const { data: items } = await supabase
+                .from('route_items')
+                .select('status')
+                .in('route_id', routeIds);
+
+            if (items) {
+                const pending = items.filter(i => i.status === 'pending').length;
+                const delivered = items.filter(i => i.status === 'delivered').length;
                 setStats({
                     pending,
                     delivered,
