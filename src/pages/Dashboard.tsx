@@ -45,7 +45,7 @@ const ActiveVisitTimer = ({ startTime }: { startTime: string }) => {
 };
 
 const Dashboard = () => {
-    const { profile, isSupervisor } = useUser();
+    const { profile, isSupervisor, hasPermission } = useUser();
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState({
         todayVisits: 0,
@@ -179,7 +179,7 @@ const Dashboard = () => {
                 .lte('check_in_time', isoEnd)
                 .order('check_in_time', { ascending: false });
 
-            if (!isSupervisor && profile) {
+            if (!hasPermission('VIEW_TEAM_STATS') && profile) {
                 visitsQuery = visitsQuery.eq('sales_rep_id', profile.id);
             }
 
@@ -209,7 +209,7 @@ const Dashboard = () => {
                 console.error("Error fetching detail visits:", visitsError);
             }
 
-            if (isSupervisor) {
+            if (hasPermission('VIEW_TEAM_STATS')) {
                 // Admin/Supervisor Logic: Summary per Seller
                 const { data: sellers } = await supabase
                     .from('profiles')
@@ -346,7 +346,7 @@ const Dashboard = () => {
                 }));
 
                 setAdminSummary(summary);
-            } else if (profile) {
+            } else if (profile && !hasPermission('VIEW_TEAM_STATS')) {
                 // Seller Logic: Personal Stats
                 // Note: We already fetched 'visits' in dailyVisits, but this logic calculates specific stats so strictly keeping it for now
                 const { data: visits } = await supabase
@@ -458,7 +458,7 @@ const Dashboard = () => {
                     <thead className="bg-white border-b border-gray-50">
                         <tr>
                             <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Hora de Entrada</th>
-                            {isSupervisor && <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Vendedor</th>}
+                            {hasPermission('VIEW_TEAM_STATS') && <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Vendedor</th>}
                             <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Cliente</th>
                             <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Comuna / Zona</th>
                             <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Tiempo</th>
@@ -478,7 +478,7 @@ const Dashboard = () => {
                                     <td className="px-6 py-4 text-sm font-bold text-gray-900">
                                         {new Date(visit.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </td>
-                                    {isSupervisor && (
+                                    {hasPermission('VIEW_TEAM_STATS') && (
                                         <td className="px-6 py-4">
                                             <div className="flex items-center space-x-2">
                                                 <div className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-[10px] font-black">
@@ -579,10 +579,10 @@ const Dashboard = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                     <h1 className="text-4xl font-black text-gray-900 tracking-tight">
-                        {isSupervisor ? 'Dashboard Admin' : 'Mi Actividad Diaria'}
+                        {hasPermission('VIEW_TEAM_STATS') ? 'Dashboard Admin' : 'Mi Actividad Diaria'}
                     </h1>
                     <p className="text-gray-400 font-medium text-lg mt-1">
-                        {isSupervisor ? 'Resumen operativo de toda la fuerza de ventas' : `Hola ${profile?.email?.split('@')[0].toUpperCase() || 'USUARIO'}, hoy es un gran día para vender.`}
+                        {hasPermission('VIEW_TEAM_STATS') ? 'Resumen operativo de toda la fuerza de ventas' : `Hola ${profile?.email?.split('@')[0].toUpperCase() || 'USUARIO'}, hoy es un gran día para vender.`}
                     </p>
                 </div>
             </div>
@@ -602,39 +602,41 @@ const Dashboard = () => {
                         className="pl-10 pr-4 py-3 bg-white border border-gray-100 rounded-2xl font-bold text-gray-700 shadow-sm focus:ring-2 focus:ring-indigo-200 outline-none"
                     />
                 </div>
-                <button
-                    onClick={async () => {
-                        if (confirm('PELIGRO CRÍTICO: Se borrarán TODAS las VISITAS y sus PEDIDOS asociados.\n\n¿Confirmar limpieza total?')) {
-                            // 1. Delete dependent Orders first (to fix Foreign Key error)
-                            const { error: orderError } = await supabase.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                {hasPermission('MANAGE_PERMISSIONS') && (
+                    <button
+                        onClick={async () => {
+                            if (confirm('PELIGRO CRÍTICO: Se borrarán TODAS las VISITAS y sus PEDIDOS asociados.\n\n¿Confirmar limpieza total?')) {
+                                // 1. Delete dependent Orders first (to fix Foreign Key error)
+                                const { error: orderError } = await supabase.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-                            if (orderError) {
-                                alert('Error borrando pedidos (RLS o Dependencias): ' + orderError.message);
-                                return;
+                                if (orderError) {
+                                    alert('Error borrando pedidos (RLS o Dependencias): ' + orderError.message);
+                                    return;
+                                }
+
+                                // 2. Delete Visits
+                                const { error } = await supabase.from('visits').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+                                if (error) alert('Error borrando visitas: ' + error.message);
+                                else {
+                                    alert('Sistema limpio. Historial y pedidos eliminados.');
+                                    fetchDashboardData();
+                                }
                             }
-
-                            // 2. Delete Visits
-                            const { error } = await supabase.from('visits').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-
-                            if (error) alert('Error borrando visitas: ' + error.message);
-                            else {
-                                alert('Sistema limpio. Historial y pedidos eliminados.');
-                                fetchDashboardData();
-                            }
-                        }
-                    }}
-                    className="bg-red-100 text-red-600 px-4 py-4 rounded-2xl font-black text-sm hover:bg-red-200 transition-all flex items-center"
-                >
-                    <AlertCircle size={18} className="mr-2" />
-                    Borrar Historial
-                </button>
+                        }}
+                        className="bg-red-100 text-red-600 px-4 py-4 rounded-2xl font-black text-sm hover:bg-red-200 transition-all flex items-center"
+                    >
+                        <AlertCircle size={18} className="mr-2" />
+                        Borrar Historial
+                    </button>
+                )}
                 <Link to="/clients" className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black text-sm shadow-xl active:scale-95 transition-all flex items-center">
                     <Plus size={18} className="mr-2" />
                     Nueva Clínica
                 </Link>
             </div>
 
-            {isSupervisor ? (
+            {hasPermission('VIEW_TEAM_STATS') ? (
                 <div className="space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div className="premium-card p-6 border-l-4 border-l-indigo-600">

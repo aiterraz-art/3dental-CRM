@@ -99,8 +99,8 @@ const TeamStats = () => {
             visits(*, clients(name), orders(*))
         `);
 
-        // If not admin/jefe, only show assigned subordinates
-        if (currentUser?.role !== 'admin' && currentUser?.role !== 'jefe') {
+        // If not having VIEW_ALL_TEAM_STATS, only show assigned subordinates
+        if (!hasPermission('VIEW_ALL_TEAM_STATS')) {
             query = query.eq('supervisor_id', currentUser!.id);
         } else {
             query = query.neq('id', currentUser!.id);

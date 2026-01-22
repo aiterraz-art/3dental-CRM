@@ -46,7 +46,7 @@ const deg2rad = (deg: number) => {
 };
 
 const ClientsContent = () => {
-    const { profile } = useUser();
+    const { profile, hasPermission } = useUser();
     const navigate = useNavigate();
     const [clients, setClients] = useState<Client[]>([]);
     const [search, setSearch] = useState('');
@@ -451,8 +451,8 @@ const ClientsContent = () => {
                     return;
                 }
 
-                if (profile?.role !== 'admin') {
-                    alert("Acceso denegado: Solo los administradores pueden importar clientes masivos.");
+                if (!hasPermission('IMPORT_CLIENTS')) {
+                    alert("Acceso denegado: No tienes permisos para importar clientes masivos.");
                     setImporting(false);
                     return;
                 }
@@ -557,9 +557,9 @@ const ClientsContent = () => {
             (c.address?.toLowerCase().includes(search.toLowerCase()) ?? false);
 
         const isOwner = c.created_by === profile?.id;
-        const isAdmin = profile?.role === 'admin';
+        const canViewAll = hasPermission('VIEW_ALL_CLIENTS');
 
-        if (isAdmin) {
+        if (canViewAll) {
             return (viewMode === 'all' || isOwner) && matchesSearch;
         }
         return isOwner && matchesSearch;
@@ -571,12 +571,12 @@ const ClientsContent = () => {
                 <div>
                     <h2 className="text-3xl font-black text-gray-900 leading-tight">Gestión de Clientes</h2>
                     <p className="text-gray-500 font-medium mt-1">
-                        {profile?.role === 'admin' ? 'Administración total de la cartera' : 'Tu cartera de clientes asignada'}
+                        {hasPermission('VIEW_ALL_CLIENTS') ? 'Administración total de la cartera' : 'Tu cartera de clientes asignada'}
                     </p>
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {profile?.role === 'admin' && (
+                    {hasPermission('VIEW_ALL_CLIENTS') && (
                         <div className="flex bg-gray-100 p-1 rounded-xl">
                             <button
                                 onClick={() => setViewMode('all')}
@@ -593,7 +593,7 @@ const ClientsContent = () => {
                         </div>
                     )}
 
-                    {profile?.role === 'admin' && (
+                    {hasPermission('IMPORT_CLIENTS') && (
                         <>
                             <input
                                 type="file"
@@ -658,7 +658,7 @@ const ClientsContent = () => {
                                             <Building2 size={28} />
                                         </div>
                                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                                            {(profile?.role === 'admin' || isOwner) && (
+                                            {(hasPermission('MANAGE_CLIENTS') || isOwner) && (
                                                 <>
                                                     <button
                                                         onClick={() => handleOpenModal(client)}

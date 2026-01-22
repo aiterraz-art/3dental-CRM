@@ -49,8 +49,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 // FALLBACK DEFAULTS until migration is applied
                 const defaults: Record<string, string[]> = {
-                    'manager': ['UPLOAD_EXCEL', 'MANAGE_INVENTORY', 'MANAGE_PRICING', 'VIEW_METAS', 'MANAGE_METAS', 'MANAGE_DISPATCH', 'EXECUTE_DELIVERY', 'MANAGE_USERS', 'MANAGE_PERMISSIONS'],
-                    'jefe': ['MANAGE_INVENTORY', 'VIEW_METAS', 'MANAGE_DISPATCH'],
+                    'manager': ['UPLOAD_EXCEL', 'MANAGE_INVENTORY', 'MANAGE_PRICING', 'VIEW_METAS', 'MANAGE_METAS', 'MANAGE_DISPATCH', 'EXECUTE_DELIVERY', 'MANAGE_USERS', 'MANAGE_PERMISSIONS', 'VIEW_ALL_CLIENTS', 'MANAGE_CLIENTS', 'IMPORT_CLIENTS', 'VIEW_TEAM_STATS', 'VIEW_ALL_TEAM_STATS'],
+                    'jefe': ['MANAGE_INVENTORY', 'VIEW_METAS', 'MANAGE_DISPATCH', 'VIEW_ALL_CLIENTS', 'VIEW_TEAM_STATS'],
                     'administrativo': ['UPLOAD_EXCEL', 'MANAGE_INVENTORY', 'MANAGE_PRICING', 'MANAGE_DISPATCH'],
                     'seller': ['VIEW_METAS'],
                     'driver': ['EXECUTE_DELIVERY']
@@ -171,8 +171,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const isSeller = effectiveRole === 'seller';
     const isDriver = effectiveRole === 'driver';
 
-    const isSupervisor = ['admin', 'jefe', 'supervisor', 'manager'].includes(effectiveRole || '');
-    const canImpersonate = ['admin', 'jefe', 'supervisor', 'manager'].includes(baseRealRole || '');
+    const isSupervisor = permissions.includes('VIEW_TEAM_STATS');
+    const canImpersonate = permissions.includes('MANAGE_USERS');
 
     // Dynamic Permissions
     const hasPermission = (perm: string) => permissions.includes(perm);

@@ -13,7 +13,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { profile, isSupervisor, impersonatedUser, impersonateUser, stopImpersonation, effectiveRole, canImpersonate, realRole } = useUser();
+    const { profile, isSupervisor, impersonatedUser, impersonateUser, stopImpersonation, effectiveRole, canImpersonate, realRole, hasPermission } = useUser();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const menuItems = [
@@ -36,7 +36,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         menuItems.push({ icon: <Truck size={20} />, label: 'Despacho', path: '/dispatch' });
     }
 
-    if (profile?.role === 'admin' || profile?.role === 'manager') {
+    if (hasPermission('MANAGE_USERS') || hasPermission('MANAGE_PERMISSIONS')) {
         menuItems.push({ icon: <Settings size={20} />, label: 'Configuración', path: '/settings' });
     }
 
