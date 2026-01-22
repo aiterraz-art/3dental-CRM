@@ -106,13 +106,39 @@ const Settings: React.FC = () => {
 
     const fetchUsers = async () => {
         setLoading(true);
-        const { data, error } = await supabase.from('profiles').select('*').order('email');
-        if (error) {
-            console.error('Error fetching users:', error);
-        } else {
-            setUsers(data as Profile[] || []);
+        try {
+            // Fetch from public schema
+            const { data: publicData, error: publicError } = await supabase
+                .from('profiles')
+                .select('*')
+                .order('email');
+
+            // Fetch from crm schema (Explicit fallback/sync)
+            const { data: crmData, error: crmError } = await (supabase
+                .schema('crm')
+                .from('profiles') as any)
+                .select('*')
+                .order('email');
+
+            if (publicError && crmError) {
+                console.error('Error fetching users from both schemas:', { publicError, crmError });
+            }
+
+            // Unify and deduplicate by ID
+            const unifiedUsersMap = new Map<string, Profile>();
+
+            // Add public data first
+            (publicData || []).forEach((u: any) => unifiedUsersMap.set(u.id, u as Profile));
+
+            // Overwrite/Add crm data (usually more up-to-date for management)
+            (crmData || []).forEach((u: any) => unifiedUsersMap.set(u.id, u as Profile));
+
+            setUsers(Array.from(unifiedUsersMap.values()).sort((a, b) => (a.email || '').localeCompare(b.email || '')));
+        } catch (err) {
+            console.error('Unexpected error in fetchUsers:', err);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleEdit = (user: Profile) => {
@@ -127,13 +153,22 @@ const Settings: React.FC = () => {
 
     const handleSave = async (id: string) => {
         try {
-            const { error } = await supabase
+            // Update in crm schema (Preferred for master record)
+            const { error: crmError } = await (supabase
+                .schema('crm')
+                .from('profiles') as any)
+                .update({ role: tempRole, status: tempStatus })
+                .eq('id', id);
+
+            // Also try to update in public schema (for view cache)
+            const { error: publicError } = await supabase
                 .from('profiles')
                 .update({ role: tempRole, status: tempStatus })
                 .eq('id', id);
 
-            if (error) throw error;
-            alert('Usuario actualizado correctamente.');
+            if (crmError && publicError) throw crmError || publicError;
+
+            alert('Usuario actualizado correctamente en el sistema.');
             setEditingId(null);
             fetchUsers();
         } catch (error: any) {
