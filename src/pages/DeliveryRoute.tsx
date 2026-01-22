@@ -41,15 +41,14 @@ const DeliveryRoute: React.FC = () => {
     const fetchRoute = async () => {
         setLoading(true);
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error("No authentifado");
+            if (!profile?.id) throw new Error("No hay perfil activo");
 
-            // 1. Get Active Routes for this User
+            // 1. Get Active Routes for this User (Use profile.id for impersonation support)
             const { data: myRoutes, error: routeError } = await supabase
                 .from('delivery_routes')
                 .select('id, name')
-                .eq('driver_id', user.id)
-                .eq('status', 'active');
+                .eq('driver_id', profile.id)
+                .in('status', ['active', 'in_progress']) // Support both statuses just in case
 
             if (routeError) throw routeError;
 
