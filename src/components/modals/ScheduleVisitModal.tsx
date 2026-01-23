@@ -99,6 +99,33 @@ const ScheduleVisitModal = ({ client: initialClient, assigneeId, isOpen, onClose
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) throw new Error("No user session");
 
+            // Google Token Validity Check
+            if (session.provider_token) {
+                try {
+                    // Lightweight check: Get Primary Calendar Metadata
+                    const checkResponse = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary', {
+                        headers: { 'Authorization': `Bearer ${session.provider_token}` }
+                    });
+
+                    if (!checkResponse.ok) {
+                        setLoading(false);
+                        alert("⚠️ Tu sesión de Google ha expirado o se ha desconectado.\n\nPor favor, cierra sesión y vuelve a ingresar para renovar los permisos del calendario antes de agendar.");
+                        return; // Stop execution
+                    }
+                } catch (err) {
+                    console.error("Token verification failed:", err);
+                    setLoading(false);
+                    alert("⚠️ Error verificando conexión con Google. Por favor, intenta reloguearte.");
+                    return;
+                }
+            } else {
+                // Should we block if NO token at all? User asked "si no esta activa, que no agende".
+                // Assuming "no token" = "not active".
+                setLoading(false);
+                alert("⚠️ No se detectó conexión con Google Calendar.\n\nPor favor, cierra sesión y vuelve a ingresar con tu cuenta de Google para habilitar el agendamiento.");
+                return;
+            }
+
             // Determine effective sales_rep_id
             const targetRepId = assigneeId || session.user.id;
 

@@ -780,12 +780,18 @@ const ClientsContent = () => {
                                                 <button
                                                     onClick={async () => {
                                                         if (profile?.id) {
-                                                            await supabase.from('call_logs').insert({
-                                                                user_id: profile.id,
-                                                                client_id: client.id,
-                                                                status: 'iniciada',
-                                                                interaction_type: 'Llamada'
-                                                            });
+                                                            try {
+                                                                const { error } = await supabase.from('call_logs').insert({
+                                                                    user_id: profile.id,
+                                                                    client_id: client.id,
+                                                                    status: 'completada', // Default to completed as we don't track duration
+                                                                    interaction_type: 'Llamada',
+                                                                    notes: 'Llamada iniciada desde ficha de cliente'
+                                                                });
+                                                                if (error) console.error("Error logging call:", error);
+                                                            } catch (err) {
+                                                                console.error("Critical error logging call:", err);
+                                                            }
                                                         }
                                                         window.location.href = `tel:${client.phone}`;
                                                     }}

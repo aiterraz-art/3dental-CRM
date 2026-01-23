@@ -64,6 +64,34 @@ const ScheduleActivityModal = ({ isOpen, onClose, onSaved, preSelectedAssigneeId
             const dueDateTime = new Date(`${formData.date}T${formData.time}:00`);
             const isoDue = dueDateTime.toISOString();
 
+            // 1.5 Pre-flight Google Check (only if assigning to self OR if strict policy applies to everyone)
+            // User requested: "al momento de realizar un agendamiento... compruebe la conexion"
+            // We check the CURRENT user's token.
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if (session?.provider_token) {
+                try {
+                    const checkResponse = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary', {
+                        headers: { 'Authorization': `Bearer ${session.provider_token}` }
+                    });
+
+                    if (!checkResponse.ok) {
+                        setLoading(false);
+                        alert("⚠️ Tu sesión de Google ha expirado.\n\nPor favor, cierra sesión y vuelve a ingresar para renovar los permisos del calendario.");
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Token verification failed:", err);
+                    setLoading(false);
+                    alert("⚠️ Error verificando conexión con Google. Por favor, intenta reloguearte.");
+                    return;
+                }
+            } else {
+                setLoading(false);
+                alert("⚠️ No se detectó conexión con Google Calendar.\n\nPor favor, cierra sesión y vuelve a ingresar con tu cuenta de Google.");
+                return;
+            }
+
             // 2. Insert into crm_tasks
             if (formData.assigneeId === 'all') {
                 // Bulk Insert for ALL sellers
@@ -99,9 +127,36 @@ const ScheduleActivityModal = ({ isOpen, onClose, onSaved, preSelectedAssigneeId
                 if (error) throw error;
             }
 
-            // 3. Optional: Sync to Google Calendar? 
-            // We can't easily sync to OTHER people's calendars without Service Account.
-            // We'll skip for now as per plan, relying on CRM visibility.
+            // 3. Sync to Google Calendar (Only for Self)
+            // Session is already fetched above
+            const isSelf = formData.assigneeId === session?.user.id;
+
+            if (isSelf && session?.provider_token) {
+                try {
+                    const gCalEvent = {
+                        summary: formData.title,
+                        description: formData.notes,
+                        location: 'Reunión / Actividad Interna',
+                        start: { dateTime: isoDue },
+                        end: { dateTime: new Date(dueDateTime.getTime() + 60 * 60 * 1000).toISOString() } // Default 1 hour
+                    };
+
+                    const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${session.provider_token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(gCalEvent)
+                    });
+
+                    if (!response.ok) {
+                        console.warn("Google Calendar sync failed", await response.text());
+                    }
+                } catch (gError) {
+                    console.error("Google Calendar Error:", gError);
+                }
+            }
 
             onSaved();
             onClose();

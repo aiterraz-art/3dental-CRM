@@ -156,6 +156,24 @@ const Schedule = () => {
         if (data) setTasks(data);
     };
 
+    const deleteVisit = async (visitId: string) => {
+        if (!window.confirm('¿Estás seguro de eliminar esta visita de la agenda? Esta acción es irreversible.')) return;
+
+        try {
+            console.log("Attempting to delete visit:", visitId);
+            const { error } = await supabase.from('visits').delete().eq('id', visitId);
+            if (error) {
+                console.error("Supabase Deletion Error:", error);
+                throw error;
+            }
+            console.log("Deletion successful, refreshing events...");
+            fetchAllEvents();
+        } catch (error: any) {
+            console.error("Error deleting visit:", error);
+            alert(`Error al eliminar la visita: ${error.message}. Verifica permisos.`);
+        }
+    };
+
     useEffect(() => {
         fetchAllEvents();
         fetchTasks();
@@ -257,13 +275,25 @@ const Schedule = () => {
 
                                                 <div className="flex items-center gap-1">
                                                     <div className={`w-1.5 h-1.5 rounded-full ${event.source === 'crm' ? 'bg-purple-500' :
-                                                            event.source === 'internal' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
+                                                        event.source === 'internal' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
                                                     {event.start.dateTime && new Date(event.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </div>
                                                 <div className="truncate font-medium" title={event.summary}>{event.summary}</div>
                                                 <div className="absolute hidden group-hover:block z-50 left-0 top-full mt-1 w-48 bg-gray-800 text-white p-2 rounded-lg shadow-xl text-xs whitespace-normal">
                                                     <p className="font-bold mb-1">{event.summary} {event.source === 'internal' && '(Interno)'}</p>
-                                                    {event.description && <p className="opacity-80 italic">{event.description.substring(0, 50)}...</p>}
+                                                    {event.description && <p className="opacity-80 italic mb-2">{event.description.substring(0, 50)}...</p>}
+
+                                                    {/* Actions */}
+                                                    {(event.source === 'crm' && (isSupervisor || selectedSellerId === profile?.id)) && (
+                                                        <div className="flex gap-2 border-t border-white/20 pt-2 mt-1">
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); deleteVisit(event.id); }}
+                                                                className="flex items-center gap-1 text-red-300 hover:text-red-100"
+                                                            >
+                                                                Eliminar
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}

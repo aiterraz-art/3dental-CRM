@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Phone, PhoneOff, Voicemail, HelpCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { Database } from '../../types/supabase';
+import { useUser } from '../../contexts/UserContext';
 
 type CallStatus = 'contestada' | 'no_contesto' | 'ocupado' | 'equivocado' | 'buzon';
 
@@ -16,17 +17,23 @@ const CallOutcomeModal = ({ client, isOpen, onClose, onSaved }: CallOutcomeModal
     const [status, setStatus] = useState<CallStatus | null>(null);
     const [notes, setNotes] = useState('');
     const [loading, setLoading] = useState(false);
+    const { profile } = useUser();
 
     if (!isOpen) return null;
 
     const handleSave = async () => {
         if (!status) return;
 
+        if (!profile?.id) {
+            alert("No se pudo identificar al usuario. Recarga la página.");
+            return;
+        }
+
         setLoading(true);
         try {
             const { error } = await supabase.from('call_logs').insert({
                 client_id: client.id,
-                user_id: (await supabase.auth.getUser()).data.user?.id,
+                user_id: profile.id,
                 status: status,
                 notes: notes
             });
@@ -34,9 +41,9 @@ const CallOutcomeModal = ({ client, isOpen, onClose, onSaved }: CallOutcomeModal
             if (error) throw error;
             onSaved();
             onClose();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error saving call log:', error);
-            alert('Error al guardar el registro de la llamada');
+            alert(`Error al guardar: ${error.message || JSON.stringify(error)}`);
         } finally {
             setLoading(false);
         }
@@ -69,8 +76,8 @@ const CallOutcomeModal = ({ client, isOpen, onClose, onSaved }: CallOutcomeModal
                             key={opt.id}
                             onClick={() => setStatus(opt.id as CallStatus)}
                             className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${status === opt.id
-                                    ? `${opt.border} ${opt.bg} ring-2 ring-offset-2 ring-indigo-500`
-                                    : 'border-gray-100 hover:bg-gray-50'
+                                ? `${opt.border} ${opt.bg} ring-2 ring-offset-2 ring-indigo-500`
+                                : 'border-gray-100 hover:bg-gray-50'
                                 }`}
                         >
                             <opt.icon className={opt.color} size={24} />

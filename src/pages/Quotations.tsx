@@ -54,6 +54,7 @@ const Quotations: React.FC = () => {
 
     const fetchQuotations = async () => {
         setLoading(true);
+
         try {
             const canViewAll = hasPermission('VIEW_ALL_CLIENTS') || profile?.email === 'aterraza@3dental.cl';
 
@@ -61,32 +62,75 @@ const Quotations: React.FC = () => {
                 .from('quotations')
                 .select(`
                     *,
-                    client:clients!client_id (name, address, zone, purchase_contact, status, phone, email, giro, comuna),
-                    seller:profiles!seller_id (email, full_name),
-                    location:seller_locations(lat, lng)
+                    clients (name, address, zone, purchase_contact, status, phone, email, giro, comuna)
+                    -- profiles!seller_id (email, full_name) REMOVED TO AVOID JOIN ERROR
                 `);
 
             if (!canViewAll && profile?.id) {
                 query = query.eq('seller_id', profile.id);
             }
 
-            const { data, error } = await query.order('created_at', { ascending: false });
+            const { data: quotesData, error: quotesError } = await query.order('created_at', { ascending: false });
 
-            if (error) {
-                console.error("Database error:", error);
-            } else if (data) {
-                const formattedData = data.map(q => ({
-                    ...q,
-                    client_name: q.client?.name || 'Unknown Client',
-                    client_address: q.client?.address || 'Sin Dirección',
-                    client_phone: q.client?.phone || 'Sin Teléfono',
-                    client_email: q.client?.email || 'Sin Correo',
-                    client_contact: q.client?.purchase_contact || 'Sin Nombre de Contacto',
-                    seller_email: q.seller?.email || 'N/A',
-                    seller_name: q.seller?.full_name || q.seller?.email?.split('@')[0].toUpperCase() || 'Vendedor',
-                    location: q.location && q.location[0] ? q.location[0] : null,
-                    items: typeof q.items === 'string' ? JSON.parse(q.items) : (q.items || []) // Ensure objects
-                }));
+            if (quotesError) {
+                console.error("Error fetching quotations:", quotesError);
+            } else if (quotesData) {
+                // Manual Fetch for Auxiliary Data to avoid Join issues
+                const sellerIds = Array.from(new Set(quotesData.map((q: any) => q.seller_id).filter(Boolean)));
+                const quotationIds = quotesData.map((q: any) => q.id);
+
+                let profilesMap: Record<string, any> = {};
+                let locationsMap: Record<string, any> = {};
+
+                // Parallel fetches
+                const promises = [];
+
+                if (sellerIds.length > 0) {
+                    promises.push(
+                        supabase
+                            .from('profiles')
+                            .select('id, email, full_name')
+                            .in('id', sellerIds)
+                            .then(({ data }) => {
+                                if (data) data.forEach(p => profilesMap[p.id] = p);
+                            })
+                    );
+                }
+
+                if (quotationIds.length > 0) {
+                    promises.push(
+                        supabase
+                            .from('seller_locations')
+                            .select('quotation_id, lat, lng')
+                            .in('quotation_id', quotationIds)
+                            .then(({ data }) => {
+                                if (data) data.forEach(l => locationsMap[l.quotation_id] = l);
+                            })
+                    );
+                }
+
+                await Promise.all(promises);
+
+                const formattedData = quotesData.map((q: any) => {
+                    const sellerProfile = profilesMap[q.seller_id];
+                    const loc = locationsMap[q.id];
+
+                    return {
+                        ...q,
+                        client: q.clients,
+                        seller: sellerProfile,
+                        client_name: q.clients?.name || 'Unknown Client',
+                        client_address: q.clients?.address || 'Sin Dirección',
+                        client_phone: q.clients?.phone || 'Sin Teléfono',
+                        client_email: q.clients?.email || 'Sin Correo',
+                        client_contact: q.clients?.purchase_contact || 'Sin Nombre de Contacto',
+                        seller_email: sellerProfile?.email || 'N/A',
+                        seller_name: sellerProfile?.full_name || sellerProfile?.email?.split('@')[0].toUpperCase() || 'Vendedor',
+                        location: loc || null,
+                        items: typeof q.items === 'string' ? (() => { try { return JSON.parse(q.items) } catch { return [] } })() : (q.items || [])
+                    };
+                });
+
                 setQuotations(formattedData);
             }
         } catch (error: any) {
