@@ -49,12 +49,14 @@ const Quotations: React.FC = () => {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [activeSuggestion, setActiveSuggestion] = useState<{ index: number, field: 'code' | 'detail' } | null>(null);
 
-    const { profile, isSupervisor } = useUser();
+    const { profile, isSupervisor, hasPermission, permissions } = useUser();
     const { activeVisit } = useVisit();
 
     const fetchQuotations = async () => {
         setLoading(true);
         try {
+            const canViewAll = hasPermission('VIEW_ALL_CLIENTS') || profile?.email === 'aterraza@3dental.cl';
+
             let query = supabase
                 .from('quotations')
                 .select(`
@@ -64,7 +66,7 @@ const Quotations: React.FC = () => {
                     location:seller_locations(lat, lng)
                 `);
 
-            if (!isSupervisor && profile?.id) {
+            if (!canViewAll && profile?.id) {
                 query = query.eq('seller_id', profile.id);
             }
 
@@ -102,12 +104,20 @@ const Quotations: React.FC = () => {
     useEffect(() => {
         fetchQuotations();
         const fetchClients = async () => {
-            const { data } = await supabase.from('clients').select('*').order('name');
+            const canViewAll = hasPermission('VIEW_ALL_CLIENTS') || profile?.email === 'aterraza@3dental.cl';
+
+            let query = supabase.from('clients').select('*').order('name');
+
+            if (!canViewAll && profile?.id) {
+                query = query.eq('created_by', profile.id);
+            }
+
+            const { data } = await query;
             if (data) setAvailableClients(data);
         };
         fetchClients();
         fetchProducts();
-    }, []);
+    }, [profile, permissions]); // Added permissions to ensure re-fetch when perms load
 
     const handleClientSelect = (client: any) => {
         setSelectedClient(client);
@@ -422,10 +432,10 @@ const Quotations: React.FC = () => {
                                             {/* Stage Badge */}
                                             {q.stage && (
                                                 <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wide border ${q.stage === 'won' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                                        q.stage === 'lost' ? 'bg-red-100 text-red-700 border-red-200' :
-                                                            q.stage === 'negotiation' ? 'bg-amber-100 text-amber-700 border-amber-200' :
-                                                                q.stage === 'contacted' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                                                    'bg-gray-100 text-gray-600 border-gray-200'
+                                                    q.stage === 'lost' ? 'bg-red-100 text-red-700 border-red-200' :
+                                                        q.stage === 'negotiation' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                                            q.stage === 'contacted' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                                                'bg-gray-100 text-gray-600 border-gray-200'
                                                     }`}>
                                                     {q.stage === 'won' ? 'Ganada' :
                                                         q.stage === 'lost' ? 'Perdida' :

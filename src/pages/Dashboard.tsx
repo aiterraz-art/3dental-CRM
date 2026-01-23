@@ -172,7 +172,7 @@ const Dashboard = () => {
                 // C. Get Neglected Clients (Intelligence)
                 // We fetch all clients assigned to the user or all if supervisor
                 let clientsQuery = supabase.from('clients').select('id, name');
-                if (!hasPermission('VIEW_TEAM_STATS')) {
+                if (!hasPermission('VIEW_ALL_CLIENTS')) {
                     clientsQuery = clientsQuery.eq('created_by', profile.id);
                 }
                 const { data: allClients } = await clientsQuery;
@@ -272,7 +272,15 @@ const Dashboard = () => {
                         .gte('created_at', isoStart)
                         .lte('created_at', isoEnd);
 
-                    // 4. New Clients
+                    // 4. Quotations (For Time Calculation)
+                    const { data: qData } = await supabase
+                        .from('quotations')
+                        .select('client_id, interaction_type, created_at')
+                        .eq('seller_id', seller.id)
+                        .gte('created_at', isoStart)
+                        .lte('created_at', isoEnd);
+
+                    // 5. New Clients
                     const { data: cData, count: cCount } = await supabase
                         .from('clients')
                         .select('name', { count: 'exact' })
@@ -341,6 +349,18 @@ const Dashboard = () => {
                         totalMinutes += 7;
                     });
 
+                    // D. Quotations Time (7 min if digital, 20 min if face-to-face and no visit)
+                    qData?.forEach(q => {
+                        handledClientIds.add(q.client_id);
+                        if (q.interaction_type === 'WhatsApp' || q.interaction_type === 'Teléfono') {
+                            totalMinutes += 7;
+                        } else {
+                            // Only add if no visits for this client today to avoid double counting
+                            const hasVisit = vData?.some(v => v.client_id === q.client_id);
+                            if (!hasVisit) totalMinutes += 20;
+                        }
+                    });
+
                     const hours = totalMinutes / 60;
                     const h = Math.floor(hours);
                     const m = Math.round((hours - h) * 60);
@@ -388,6 +408,13 @@ const Dashboard = () => {
                     .gte('created_at', isoStart)
                     .lte('created_at', isoEnd);
 
+                const { data: quotations } = await supabase
+                    .from('quotations')
+                    .select('*, clients(name, zone)')
+                    .eq('seller_id', profile.id)
+                    .gte('created_at', isoStart)
+                    .lte('created_at', isoEnd);
+
                 let totalMinutes = 0;
                 const handledClientIds = new Set();
 
@@ -414,6 +441,17 @@ const Dashboard = () => {
                     totalMinutes += 7;
                 });
 
+                // 4. Quotations: 7 min if digital, 20 min if face-to-face (and no visit)
+                quotations?.forEach(q => {
+                    handledClientIds.add(q.client_id);
+                    if (q.interaction_type === 'WhatsApp' || q.interaction_type === 'Teléfono') {
+                        totalMinutes += 7;
+                    } else {
+                        const hasVisit = visits?.some(v => v.client_id === q.client_id);
+                        if (!hasVisit) totalMinutes += 20;
+                    }
+                });
+
                 const hours = totalMinutes / 60;
                 const h = Math.floor(hours);
                 const m = Math.round((hours - h) * 60);
@@ -421,7 +459,8 @@ const Dashboard = () => {
                 const zones = Array.from(new Set([
                     ...(visits?.map(v => (v.clients as any)?.zone).filter(Boolean) || []),
                     ...(orders?.map(o => (o.clients as any)?.zone).filter(Boolean) || []),
-                    ...(logs?.map(l => (l.clients as any)?.zone).filter(Boolean) || [])
+                    ...(logs?.map(l => (l.clients as any)?.zone).filter(Boolean) || []),
+                    ...(quotations?.map(q => (q.clients as any)?.zone).filter(Boolean) || [])
                 ])) as string[];
 
                 // Recent activity list
@@ -440,6 +479,13 @@ const Dashboard = () => {
                         time: l.created_at,
                         clients: l.clients,
                         status: l.status || 'Finalizada'
+                    })) || []),
+                    ...(quotations?.map(q => ({
+                        ...q,
+                        type: 'Cotización',
+                        time: q.created_at,
+                        clients: q.clients,
+                        status: q.interaction_type || 'Digital'
                     })) || [])
                 ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 

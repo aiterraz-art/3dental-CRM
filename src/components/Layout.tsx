@@ -93,47 +93,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                         ))}
                     </nav>
 
-                    {/* Role Switcher (Admin only) */}
-                    {canImpersonate && (
-                        <div className="mt-8 pt-8 border-t border-white/20">
-                            <p className="text-white text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center">
-                                <ShieldCheck size={12} className="mr-2 text-premium-accent" />
-                                Vista Admin
-                            </p>
-                            <div className="space-y-1">
-                                <button
-                                    onClick={() => { impersonateUser('dcarvajal@3dental.cl'); closeMenu(); }}
-                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all ${impersonatedUser?.email === 'dcarvajal@3dental.cl' ? 'bg-white text-indigo-600 shadow-lg' : 'text-white/60 hover:bg-white/10'}`}
-                                >
-                                    <UserCircle size={16} />
-                                    <span className="text-xs font-bold">Simular: Daniela</span>
-                                </button>
-                                <button
-                                    onClick={() => { impersonateUser('nrigual@3dental.cl'); closeMenu(); }}
-                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all ${impersonatedUser?.email === 'nrigual@3dental.cl' ? 'bg-white text-indigo-600 shadow-lg' : 'text-white/60 hover:bg-white/10'}`}
-                                >
-                                    <UserCircle size={16} />
-                                    <span className="text-xs font-bold">Simular: Natalia</span>
-                                </button>
-                                <button
-                                    onClick={() => { impersonateUser('jmena@3dental.cl'); closeMenu(); }}
-                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all ${impersonatedUser?.email === 'jmena@3dental.cl' ? 'bg-white text-indigo-600 shadow-lg' : 'text-white/60 hover:bg-white/10'}`}
-                                >
-                                    <Truck size={16} />
-                                    <span className="text-xs font-bold">Simular: Juan</span>
-                                </button>
-                                {impersonatedUser && (
-                                    <button
-                                        onClick={() => { stopImpersonation(); closeMenu(); }}
-                                        className="w-full mt-2 flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all bg-red-500/20 text-red-100 hover:bg-red-500/30 border border-red-500/30"
-                                    >
-                                        <LogOut size={16} />
-                                        <span className="text-xs font-bold">Detener Simulación</span>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
+
                 </div>
 
                 <div className="p-6 shrink-0">

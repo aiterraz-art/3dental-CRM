@@ -467,85 +467,7 @@ const Dispatch: React.FC = () => {
         }
     };
 
-    const handleSimulateData = async () => {
-        if (!confirm("¿Generar 10 pedidos de prueba en Santiago? Esto creará clientes y ordenes ficticias.")) return;
-        setSubmitting(true);
-        try {
-            // Validate User Directly from Supabase (More robust than context for this action)
-            const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-            if (authError || !user) {
-                console.error("Auth Error:", authError);
-                alert("Error: No se detectó un usuario activo (Sesión expirada o inválida). Por favor recarga la página o inicia sesión nuevamente.");
-                return;
-            }
-
-            const mockClients = [
-                { name: 'Clínica Dental Santiago Centro', rut: '76.111.111-1', address: 'Alameda 1234', comuna: 'Santiago', phone: '+56911111111', lat: -33.4430, lng: -70.6530 },
-                { name: 'Odontología Providencia', rut: '76.222.222-2', address: 'Av. Providencia 2000', comuna: 'Providencia', phone: '+56922222222', lat: -33.4260, lng: -70.6120 },
-                { name: 'Centro Médico Las Condes', rut: '76.333.333-3', address: 'Av. Apoquindo 4000', comuna: 'Las Condes', phone: '+56933333333', lat: -33.4140, lng: -70.5850 },
-                { name: 'Dental Vitacura', rut: '76.444.444-4', address: 'Av. Vitacura 5000', comuna: 'Vitacura', phone: '+56944444444', lat: -33.3980, lng: -70.5700 },
-                { name: 'Ortodoncia Ñuñoa', rut: '76.555.555-5', address: 'Irarrázaval 3000', comuna: 'Ñuñoa', phone: '+56955555555', lat: -33.4550, lng: -70.6000 },
-                { name: 'Sonrisas La Reina', rut: '76.666.666-6', address: 'Av. Ossa 1000', comuna: 'La Reina', phone: '+56966666666', lat: -33.4400, lng: -70.5600 },
-                { name: 'Implantes Recoleta', rut: '76.777.777-7', address: 'Av. Recoleta 2500', comuna: 'Recoleta', phone: '+56977777777', lat: -33.4000, lng: -70.6400 },
-                { name: 'Frenillos Independencia', rut: '76.888.888-8', address: 'Independencia 1500', comuna: 'Independencia', phone: '+56988888888', lat: -33.4100, lng: -70.6550 },
-                { name: 'Estética Huechuraba', rut: '76.999.999-9', address: 'Pedro Fontova 7000', comuna: 'Huechuraba', phone: '+56999999999', lat: -33.3600, lng: -70.6600 },
-                { name: 'Salud Oral Quilicura', rut: '76.000.000-0', address: 'O Higgins 400', comuna: 'Quilicura', phone: '+56900000000', lat: -33.3600, lng: -70.7300 }
-            ];
-
-            // 1. Upsert Clients
-            const { data: insertedClients, error: clientsError } = await supabase
-                .from('clients')
-                .upsert(mockClients, { onConflict: 'rut' })
-                .select('id, rut');
-
-            if (clientsError) throw new Error("Error creando clientes: " + clientsError.message);
-            if (!insertedClients) throw new Error("Upsert de clientes no retornó datos.");
-
-            // 2. Create Orders
-            const ordersToInsert = insertedClients.map(client => ({
-                client_id: client.id,
-                user_id: user.id,
-                status: 'approved',
-                total_amount: Math.floor(Math.random() * 500000) + 50000,
-                // folio: Removed as column doesn't exist in orders
-                delivery_status: 'pending',
-                created_at: new Date().toISOString()
-            }));
-
-            const { data: insertedOrders, error: ordersError } = await supabase
-                .from('orders')
-                .insert(ordersToInsert)
-                .select(); // Select to get IDs back
-
-            if (ordersError) throw new Error("Error creando órdenes: " + ordersError.message);
-            if (!insertedOrders) throw new Error("Insert de órdenes no retornó datos.");
-
-            // 3. Update State
-            const newlyMatched: MatchedOrder[] = insertedOrders.map((order: any, index: number) => ({
-                id: order.id,
-                folio: 0, // Mock holder
-                client_name: mockClients[index].name,
-                client_address: mockClients[index].address,
-                client_rut: mockClients[index].rut,
-                lat: mockClients[index].lat,
-                lng: mockClients[index].lng,
-                status: order.status,
-                delivery_status: order.delivery_status
-            }));
-
-            console.log("Matched Orders:", newlyMatched);
-            setMatchedOrders(newlyMatched);
-            setProcessedRows(newlyMatched.map(o => ({ RUT: o.client_rut, PEDIDO: 'SIMULADO' })));
-
-            alert(`✅ ¡Éxito! Se han generado ${newlyMatched.length} pedidos de prueba.`);
-        } catch (err: any) {
-            console.error("Error simulation:", err);
-            alert("❌ Error: " + err.message);
-        } finally {
-            setSubmitting(false);
-        }
-    };
 
     const handleStartDispatch = async () => {
         if (matchedOrders.length === 0) return;
@@ -581,12 +503,7 @@ const Dispatch: React.FC = () => {
                 <div>
                     <h2 className="text-4xl font-black text-gray-900 tracking-tight">Centro de Despacho</h2>
                     <p className="text-gray-400 font-medium mt-1 text-lg">Carga masiva y planificación de rutas</p>
-                    <button
-                        onClick={handleSimulateData}
-                        className="mt-2 text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors"
-                    >
-                        ⚙️ Simular 10 Pedidos (Demo)
-                    </button>
+
                 </div>
 
                 {/* Tabs */}

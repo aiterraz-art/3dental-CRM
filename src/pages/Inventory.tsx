@@ -101,7 +101,8 @@ const Inventory = () => {
                             sku: (getValue(row, ['digo', 'SKU']) || '').toString().trim(),
                             name: (getValue(row, ['descrip', 'Nombre', 'Name', 'Detail']) || '').toString().trim(),
                             stock_qty: parseInt(getValue(row, ['Saldo', 'Stock', 'Cantidad']) || '0') || 0,
-                            category: (getValue(row, ['Categoria', 'Categoría', 'Category']) || 'General').toString().trim()
+                            category: (getValue(row, ['Categoria', 'Categoría', 'Category']) || 'General').toString().trim(),
+                            price: parseFloat(getValue(row, ['Precio', 'Price', 'Neto', 'Valor', 'P.Unit']) || '0')
                         })).filter(item => item.name && item.sku);
 
                         if (newItems.length === 0) {

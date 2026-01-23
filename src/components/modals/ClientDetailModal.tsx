@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { X, MapPin, Phone, Mail, Building2, Calendar, FileText, ShoppingBag, Clock, FileSpreadsheet, Send, Pencil, ChevronRight, Plus } from 'lucide-react';
+import { X, MapPin, Phone, Mail, Building2, Calendar, FileText, ShoppingBag, Clock, FileSpreadsheet, Send, Pencil, ChevronRight, Plus, CalendarRange } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { Database } from '../../types/supabase';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { useNavigate } from 'react-router-dom';
 import CallOutcomeModal from './CallOutcomeModal';
+import ScheduleVisitModal from './ScheduleVisitModal';
+import { useUser } from '../../contexts/UserContext';
 
 type Client = Database['public']['Tables']['clients']['Row'];
 
@@ -17,6 +19,7 @@ interface ClientDetailModalProps {
 
 const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailModalProps) => {
     const navigate = useNavigate();
+    const { profile } = useUser();
     const [activeTab, setActiveTab] = useState<'overview' | 'visits' | 'quotations' | 'orders' | 'emails' | 'calls'>('overview');
     const [stats, setStats] = useState({ totalVisits: 0, totalSales: 0, lastVisit: null as string | null });
     const [visits, setVisits] = useState<any[]>([]);
@@ -26,6 +29,7 @@ const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailMod
     const [callLogs, setCallLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [showCallOutcome, setShowCallOutcome] = useState(false);
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
 
     const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -38,7 +42,7 @@ const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailMod
         try {
             if (activeTab === 'overview') {
                 const { count: visitsCount } = await supabase.from('visits').select('*', { count: 'exact', head: true }).eq('client_id', client.id);
-                const { data: lastVisit } = await supabase.from('visits').select('check_in_time').eq('client_id', client.id).order('check_in_time', { ascending: false }).limit(1).single();
+                const { data: lastVisit } = await supabase.from('visits').select('check_in_time').eq('client_id', client.id).eq('status', 'completed').order('check_in_time', { ascending: false }).limit(1).single();
                 const { data: salesData } = await supabase.from('orders').select('total_amount').eq('client_id', client.id);
                 const totalSales = salesData?.reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0) || 0;
 
@@ -77,9 +81,19 @@ const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailMod
     const handleVisit = () => navigate(`/visit/${client.id}`);
     const handleQuote = () => navigate('/quotations', { state: { client: client } });
 
-    const handleCall = () => {
+    const handleCall = async () => {
+        // Register call automatically
+        if (profile?.id) {
+            await supabase.from('call_logs').insert({
+                user_id: profile.id,
+                client_id: client.id,
+                status: 'iniciada', // Preliminary status
+                interaction_type: 'Llamada'
+            });
+        }
         window.location.href = `tel:${client.phone}`;
-        setTimeout(() => setShowCallOutcome(true), 1000);
+        // Show modal to capture outcome
+        setTimeout(() => setShowCallOutcome(true), 1500);
     };
 
     return (
@@ -109,6 +123,9 @@ const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailMod
                             </div>
                         </div>
                         <div className="flex gap-3 w-full md:w-auto mt-4 md:mt-0">
+                            <button onClick={() => setShowScheduleModal(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-purple-900/50 active:scale-95">
+                                <CalendarRange size={18} /> Agendar
+                            </button>
                             <button onClick={handleVisit} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-indigo-900/50 active:scale-95">
                                 <MapPin size={18} /> Visita
                             </button>
@@ -192,10 +209,53 @@ const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailMod
                                     {activeTab === 'visits' && visits.map((visit) => (
                                         <div key={visit.id} className="p-6 border-b border-gray-100 hover:bg-gray-50 transition-colors flex justify-between items-center group">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center font-bold"><MapPin size={20} /></div>
-                                                <div><p className="font-bold text-gray-900">{visit.purpose || 'Visita Regular'}</p><p className="text-xs text-gray-500 font-medium flex items-center gap-1"><Clock size={10} /> {formatDateTime(visit.check_in_time)} por {visit.profiles?.full_name}</p></div>
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold ${visit.status === 'scheduled' ? 'bg-purple-50 text-purple-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                    {visit.status === 'scheduled' ? <CalendarRange size={20} /> : <MapPin size={20} />}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-gray-900">{visit.title || visit.purpose || 'Visita Regular'}</p>
+                                                    <p className="text-xs text-gray-500 font-medium flex items-center gap-1"><Clock size={10} /> {formatDateTime(visit.check_in_time)} por {visit.profiles?.full_name}</p>
+                                                    {visit.status === 'scheduled' && <p className="text-[10px] text-purple-600 font-bold bg-purple-50 inline-block px-2 py-0.5 rounded mt-1">PROGRAMADA</p>}
+                                                </div>
                                             </div>
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${visit.check_out_time ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700 animate-pulse'}`}>{visit.check_out_time ? 'Completada' : 'En Curso'}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${visit.status === 'scheduled' ? 'bg-purple-100 text-purple-700' : visit.status === 'cancelled' ? 'bg-red-100 text-red-700' : visit.check_out_time ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700 animate-pulse'}`}>
+                                                    {visit.status === 'scheduled' ? 'Agendada' : visit.status === 'cancelled' ? 'Cancelada' : visit.check_out_time ? 'Completada' : 'En Curso'}
+                                                </span>
+                                                {visit.status === 'scheduled' && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (!confirm('¿Estás seguro de cancelar esta visita? Se eliminará también de Google Calendar.')) return;
+                                                            setLoading(true);
+                                                            try {
+                                                                // 1. Delete from Google if ID exists
+                                                                if (visit.google_event_id) {
+                                                                    const { data: { session } } = await supabase.auth.getSession();
+                                                                    if (session?.provider_token) {
+                                                                        await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${visit.google_event_id}`, {
+                                                                            method: 'DELETE',
+                                                                            headers: { Authorization: `Bearer ${session.provider_token}` }
+                                                                        });
+                                                                    }
+                                                                }
+                                                                // 2. Mark as Cancelled in Supabase
+                                                                await supabase.from('visits').update({ status: 'cancelled' }).eq('id', visit.id);
+                                                                fetchData();
+                                                                alert('Visita cancelada correctamente.');
+                                                            } catch (err) {
+                                                                console.error("Error cancelling visit:", err);
+                                                                alert("Error al cancelar visita.");
+                                                            } finally {
+                                                                setLoading(false);
+                                                            }
+                                                        }}
+                                                        className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-colors"
+                                                        title="Cancelar Visita"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                     {activeTab === 'quotations' && quotations.map((q) => (
@@ -255,6 +315,15 @@ const ClientDetailModal = ({ client, onClose, onEdit, onEmail }: ClientDetailMod
                 onClose={() => setShowCallOutcome(false)}
                 onSaved={() => {
                     if (activeTab === 'calls') fetchData();
+                }}
+            />
+
+            <ScheduleVisitModal
+                client={client}
+                isOpen={showScheduleModal}
+                onClose={() => setShowScheduleModal(false)}
+                onSaved={() => {
+                    if (activeTab === 'visits') fetchData();
                 }}
             />
         </div>

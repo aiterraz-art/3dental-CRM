@@ -10,7 +10,10 @@ const Settings: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'users' | 'permissions'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'permissions' | 'integrations'>('users');
+    const [testingSync, setTestingSync] = useState(false);
+
+    // RESTORED STATE
     const [tempRole, setTempRole] = useState<string>('');
     const [tempStatus, setTempStatus] = useState<string>('');
     const [tempSupervisor, setTempSupervisor] = useState<string | null>(null);
@@ -272,6 +275,45 @@ const Settings: React.FC = () => {
         }
     };
 
+    const handleTestGoogleSync = async () => {
+        setTestingSync(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const providerToken = (session as any)?.provider_token;
+
+            if (!providerToken) {
+                alert("❌ ERROR DE TOKEN:\nNo se detectó una sesión de Google activa.\n\nSolución: Cierra sesión en el CRM y vuelve a ingresar con Google para renovar el token.");
+                return;
+            }
+
+            // Test call to Google Calendar API (List Calendars)
+            const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+                headers: {
+                    'Authorization': `Bearer ${providerToken}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log("Google Sync Success:", data);
+                alert(`✅ CONEXIÓN EXITOSA\n\nGoogle Calendar respondió correctamente.\nCalendarios detectados: ${data.items?.length || 0}\n\nLa sincronización está activa.`);
+            } else {
+                const errorText = await response.text();
+                console.error("Google Sync Failed:", errorText);
+                if (response.status === 401 || response.status === 403) {
+                    alert("❌ ERROR DE PERMISOS (401/403):\nEl token de Google ha expirado o fue revocado.\n\nSolución: Cierra sesión y vuelve a entrar.");
+                } else {
+                    alert(`❌ ERROR DE CONEXIÓN (${response.status}):\n${errorText}`);
+                }
+            }
+        } catch (error: any) {
+            console.error("Test Error:", error);
+            alert("❌ ERROR CRÍTICO:\n" + error.message);
+        } finally {
+            setTestingSync(false);
+        }
+    };
+
     if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) return <div className="p-20 text-center font-bold">Acceso Denegado</div>;
 
     const filteredUsers = users.filter(u => (u.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (u.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()));
@@ -286,6 +328,7 @@ const Settings: React.FC = () => {
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl">
                     <button onClick={() => setActiveTab('users')} className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Usuarios</button>
                     <button onClick={() => setActiveTab('permissions')} className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'permissions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Roles</button>
+                    <button onClick={() => setActiveTab('integrations')} className={`px-6 py-2.5 rounded-xl font-bold transition-all ${activeTab === 'integrations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Integraciones</button>
                     <button onClick={() => setIsInviteModalOpen(true)} className="ml-4 px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all shadow-lg flex items-center gap-2"><User size={16} /> Invitar</button>
                 </div>
             </div>
@@ -401,7 +444,7 @@ const Settings: React.FC = () => {
                         </table>
                     </div>
                 </div>
-            ) : (
+            ) : activeTab === 'permissions' ? (
                 <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
                     <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
                         <div>
@@ -461,8 +504,45 @@ const Settings: React.FC = () => {
                         </table>
                     </div>
                 </div>
-            )
-            }
+            ) : (
+                // NEW: Integrations Tab
+                <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden p-8 space-y-8">
+                    <div>
+                        <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3">Integraciones & Diagnóstico</h3>
+                        <p className="text-sm text-gray-400 font-bold mt-1 uppercase tracking-wider">Verifica el estado de tus conexiones externas</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Google Calendar Card */}
+                        <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-4 mb-6">
+                                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center font-bold text-2xl">
+                                    G
+                                </div>
+                                <div>
+                                    <h4 className="text-lg font-black text-gray-900">Google Calendar</h4>
+                                    <p className="text-xs text-gray-500 font-medium">Sincronización de eventos y visitas</p>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-2xl p-6 mb-6">
+                                <p className="text-sm text-gray-600 font-medium leading-relaxed">
+                                    Verifica si el sistema tiene permiso para leer y escribir en tu calendario. Si hay errores, usualmente se resuelven cerrando y re-iniciando sesión.
+                                </p>
+                            </div>
+
+                            <button
+                                onClick={handleTestGoogleSync}
+                                disabled={testingSync}
+                                className={`w-full py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg transition-all flex items-center justify-center gap-2
+                                    ${testingSync ? 'bg-gray-100 text-gray-400 cursor-wait' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-200'}`}
+                            >
+                                {testingSync ? 'Verificando...' : 'Probar Conexión Ahora'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {
                 isInviteModalOpen && (

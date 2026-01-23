@@ -47,30 +47,7 @@ const SellerRoutes = () => {
                 .from('profiles')
                 .select('*');
 
-            let allUsers = data || [];
-
-            // INJECT MOCK USERS if they don't exist
-            // This allows viewing routes for the simulated users
-            const mockUsers = [
-                {
-                    id: '11111111-1111-1111-1111-111111111111',
-                    email: 'dcarvajal@3dental.cl',
-                    full_name: 'Daniela Carvajal',
-                },
-                {
-                    id: '22222222-2222-2222-2222-222222222222',
-                    email: 'nrigual@3dental.cl',
-                    full_name: 'Natalia Rigual',
-                }
-            ];
-
-            mockUsers.forEach(mock => {
-                if (!allUsers.find(u => u.email === mock.email)) {
-                    allUsers.push(mock as any);
-                }
-            });
-
-            setUsers(allUsers);
+            setUsers(data || []);
         };
         fetchUsers();
     }, []);

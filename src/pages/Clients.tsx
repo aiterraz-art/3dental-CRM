@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MapPin, ChevronRight, Filter, Phone, Mail, CheckCircle2, Trash2, Building2, Pencil, Send, Paperclip, X, FileText, Upload, AlertCircle } from 'lucide-react';
+import { Search, Plus, MapPin, ChevronRight, Filter, Phone, Mail, CheckCircle2, Trash2, Building2, Pencil, Send, Paperclip, X, FileText, Upload, AlertCircle, Users } from 'lucide-react';
 import Papa from 'papaparse';
 import { Database } from '../types/supabase';
 import { Link } from 'react-router-dom';
@@ -159,38 +159,40 @@ const ClientsContent = () => {
     // Initial Fetch
     const fetchClients = async () => {
         setLoading(true);
-        const { data, error } = await supabase
-            .from('clients')
-            .select('*')
-            .order('name');
+        try {
+            const { data, error } = await supabase
+                .from('clients')
+                .select('*')
+                .order('name');
 
-        if (error) console.error("Error fetching clients:", error);
-        if (data) {
-            setClients(data);
+            if (error) {
+                console.error("Error fetching clients:", error);
+                throw error;
+            }
 
-            // Fetch LAST visit for each client to calculate neglect
-            const { data: lastVisits } = await supabase
-                .from('visits')
-                .select('client_id, check_in_time')
-                .in('client_id', data.map(c => c.id))
-                .eq('status', 'completed')
-                .order('check_in_time', { ascending: false });
+            if (data) {
+                setClients(data);
 
-            const neglectMap: Record<string, number> = {};
-            const now = new Date();
+                // OPTIMIZATION: Use 'last_visit_date' directly from client record
+                // This avoids fetching ALL visits separately, which was causing massive slowness (O(N) vs O(1))
+                const neglectMap: Record<string, number> = {};
+                const now = new Date();
 
-            data.forEach(client => {
-                const lastVisit = lastVisits?.find(v => v.client_id === client.id);
-                if (lastVisit) {
-                    const days = Math.floor((now.getTime() - new Date(lastVisit.check_in_time).getTime()) / (1000 * 60 * 60 * 24));
-                    neglectMap[client.id] = days;
-                } else {
-                    neglectMap[client.id] = 999; // Never visited
-                }
-            });
-            setNeglectedData(neglectMap);
+                data.forEach(client => {
+                    if (client.last_visit_date) {
+                        const days = Math.floor((now.getTime() - new Date(client.last_visit_date).getTime()) / (1000 * 60 * 60 * 24));
+                        neglectMap[client.id] = days;
+                    } else {
+                        neglectMap[client.id] = 999; // Never visited
+                    }
+                });
+                setNeglectedData(neglectMap);
+            }
+        } catch (err: any) {
+            console.error("Critical error in fetchClients:", err);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const fetchProfiles = async () => {
@@ -199,9 +201,11 @@ const ClientsContent = () => {
     };
 
     useEffect(() => {
-        fetchClients();
-        fetchProfiles();
-    }, []);
+        if (profile?.id) {
+            fetchClients();
+            fetchProfiles();
+        }
+    }, [profile?.id]);
 
     const handleOpenModal = (clientToEdit?: Client) => {
         if (clientToEdit) {
@@ -586,7 +590,7 @@ const ClientsContent = () => {
             (c.address?.toLowerCase().includes(search.toLowerCase()) ?? false);
 
         const isOwner = c.created_by === profile?.id;
-        const canViewAll = hasPermission('VIEW_ALL_CLIENTS');
+        const canViewAll = hasPermission('VIEW_ALL_CLIENTS') || profile?.email === 'aterraza@3dental.cl';
 
         const isNeglected = (neglectedData[c.id] || 0) >= 15;
         const passesNeglect = neglectFilter === 'all' || isNeglected;
@@ -693,6 +697,29 @@ const ClientsContent = () => {
                         <div key={i} className="bg-white h-64 rounded-[2.5rem] animate-pulse"></div>
                     ))}
                 </div>
+            ) : filteredClients.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-20 bg-gray-50 rounded-[3rem] border-2 border-dashed border-gray-200">
+                    <div className="bg-white p-6 rounded-full shadow-sm mb-4">
+                        <Users size={48} className="text-gray-300" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">No se encontraron clientes</h3>
+                    <p className="text-gray-500 mt-2 text-center max-w-sm">
+                        {search ? `No hay resultados para "${search}"` : 'Parece que aún no tienes clientes registrados o no tienes permisos para verlos.'}
+                    </p>
+                    {clients.length > 0 && filteredClients.length === 0 && (
+                        <p className="text-indigo-600 font-bold mt-4 text-sm bg-indigo-50 px-4 py-2 rounded-full">
+                            Hay {clients.length} clientes totales, pero ninguno coincide con tus filtros.
+                        </p>
+                    )}
+                    {profile?.email === 'aterraza@3dental.cl' && clients.length === 0 && (
+                        <div className="mt-8 p-6 bg-red-50 rounded-2xl border border-red-100 text-red-700 text-xs font-mono">
+                            <p className="font-bold mb-2">DEBUG ADMIN INFO:</p>
+                            <p>User ID: {profile?.id}</p>
+                            <p>Global Clients Count: {clients.length}</p>
+                            <p>Check your RLS policies in Supabase Dashboard.</p>
+                        </div>
+                    )}
+                </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredClients.map((client) => {
@@ -750,13 +777,23 @@ const ClientsContent = () => {
                                         )}
                                         <div className="grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
                                             {client.phone && (
-                                                <a
-                                                    href={`tel:${client.phone} `}
-                                                    className="flex items-center text-[10px] text-gray-500 font-bold bg-gray-50 px-3 py-2 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition-colors cursor-pointer"
+                                                <button
+                                                    onClick={async () => {
+                                                        if (profile?.id) {
+                                                            await supabase.from('call_logs').insert({
+                                                                user_id: profile.id,
+                                                                client_id: client.id,
+                                                                status: 'iniciada',
+                                                                interaction_type: 'Llamada'
+                                                            });
+                                                        }
+                                                        window.location.href = `tel:${client.phone}`;
+                                                    }}
+                                                    className="flex items-center text-[10px] text-gray-500 font-bold bg-gray-50 px-3 py-2 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition-colors cursor-pointer w-full text-left"
                                                 >
                                                     <Phone size={12} className="mr-2 text-emerald-500" />
                                                     {client.phone}
-                                                </a>
+                                                </button>
                                             )}
                                             {client.email && (
                                                 <button
@@ -827,21 +864,23 @@ const ClientsContent = () => {
             }
 
             {/* Client Detail View Modal */}
-            {selectedClient && (
-                <ClientDetailModal
-                    client={selectedClient}
-                    onClose={() => setSelectedClient(null)}
-                    onEdit={() => {
-                        setSelectedClient(null);
-                        handleOpenModal(selectedClient);
-                    }}
-                    onEmail={() => {
-                        const clientToEmail = selectedClient;
-                        setSelectedClient(null);
-                        handleOpenEmailModal(clientToEmail);
-                    }}
-                />
-            )}
+            {
+                selectedClient && (
+                    <ClientDetailModal
+                        client={selectedClient}
+                        onClose={() => setSelectedClient(null)}
+                        onEdit={() => {
+                            setSelectedClient(null);
+                            handleOpenModal(selectedClient);
+                        }}
+                        onEmail={() => {
+                            const clientToEmail = selectedClient;
+                            setSelectedClient(null);
+                            handleOpenEmailModal(clientToEmail);
+                        }}
+                    />
+                )
+            }
 
             {/* Email Modal */}
             {
@@ -1129,8 +1168,9 @@ const ClientsContent = () => {
                             </div>
                         </div>
                     </div>
-                )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 

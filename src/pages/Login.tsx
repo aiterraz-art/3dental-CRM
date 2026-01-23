@@ -8,7 +8,7 @@ const Login = () => {
                 redirectTo: `${window.location.origin}/`,
                 queryParams: {
                     access_type: 'offline',
-                    prompt: 'select_account',
+                    prompt: 'consent',
                 },
                 scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.compose'
             }
@@ -27,10 +27,8 @@ const Login = () => {
 
             <div className="w-full max-w-lg bg-white/95 backdrop-blur-xl rounded-[3rem] shadow-2xl p-10 md:p-16 space-y-10 relative z-10 animate-in fade-in zoom-in duration-700">
                 <div className="text-center space-y-4">
-                    <div className="bg-side-gradient w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-indigo-200">
-                        <span className="text-white text-5xl font-black italic">S</span>
-                    </div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight">SmileLink</h1>
+                    <img src="/logo_3dental.png" alt="3Dental Logo" className="w-32 mx-auto mb-6 drop-shadow-2xl" />
+                    <h1 className="text-4xl font-black text-gray-900 tracking-tight">CRM 3Dental</h1>
                     <p className="text-gray-400 font-medium text-lg leading-relaxed px-4">
                         Modern Field Partner CRM for high-performance dental sales teams.
                     </p>
@@ -42,7 +40,7 @@ const Login = () => {
                         className="w-full flex items-center justify-center space-x-4 bg-white border border-gray-100 py-5 px-8 rounded-[2rem] font-bold text-gray-700 hover:bg-gray-50 transition-all active:scale-95 shadow-sm hover:shadow-xl hover:shadow-indigo-50 border-gray-100"
                     >
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
-                        <span className="text-lg">Continue with Enterprise Identity</span>
+                        <span className="text-lg">Inicio de Sesión</span>
                     </button>
 
                     <p className="text-[10px] text-center text-gray-300 font-bold uppercase tracking-[0.2em]">
