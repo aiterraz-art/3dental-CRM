@@ -11,17 +11,16 @@ const Settings: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'users' | 'permissions'>('users');
-
     const [tempRole, setTempRole] = useState<string>('');
     const [tempStatus, setTempStatus] = useState<string>('');
+    const [tempSupervisor, setTempSupervisor] = useState<string | null>(null);
     const [rolePerms, setRolePerms] = useState<Record<string, string[]>>({});
     const [savingPerms, setSavingPerms] = useState(false);
-
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
     const [sendingInvite, setSendingInvite] = useState(false);
     const [inviteData, setInviteData] = useState({ email: '', full_name: '', role: 'seller' });
 
-    const roles = ['manager', 'jefe', 'administrativo', 'seller', 'driver'];
+    const roles = ['jefe', 'administrativo', 'seller', 'driver'];
     const permissionList = [
         { key: 'UPLOAD_EXCEL', label: 'Cargar Excel', desc: 'Permite subir archivos de inventario, precios y despacho.' },
         { key: 'MANAGE_INVENTORY', label: 'Gestión Inventario', desc: 'Crear, editar y eliminar productos.' },
@@ -64,77 +63,92 @@ const Settings: React.FC = () => {
         }
     };
 
-    const togglePermission = (role: string, perm: string) => {
-        if (role === 'manager' && perm === 'MANAGE_PERMISSIONS') return;
-        setRolePerms(prev => {
-            const current = prev[role] || [];
-            return current.includes(perm) ? { ...prev, [role]: current.filter(p => p !== perm) } : { ...prev, [role]: [...current, perm] };
-        });
-    };
-
-    const savePermissions = async () => {
-        setSavingPerms(true);
-        try {
-            await supabase.from('role_permissions').delete().neq('role', 'none');
-            const toInsert = [];
-            for (const [role, perms] of Object.entries(rolePerms)) {
-                for (const permission of perms) toInsert.push({ role, permission });
-            }
-            const { error } = await supabase.from('role_permissions').insert(toInsert);
-            if (error) throw error;
-            alert('Matriz de permisos actualizada.');
-        } catch (error: any) {
-            alert('Error al guardar: ' + error.message);
-        } finally {
-            setSavingPerms(false);
-        }
-    };
-
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const { data: publicData } = await supabase.from('profiles').select('*').order('email');
-            let crmData = [];
-            try {
-                const { data } = await (supabase.schema('crm').from('profiles') as any).select('*').order('email');
-                if (data) crmData = data;
-            } catch (e) { }
-
-            const unifiedUsersMap = new Map<string, Profile>();
-            (publicData || []).forEach((u: any) => unifiedUsersMap.set(u.id, u as Profile));
-            (crmData || []).forEach((u: any) => unifiedUsersMap.set(u.id, u as Profile));
-
-            setUsers(Array.from(unifiedUsersMap.values()).sort((a, b) => (a.email || '').localeCompare(b.email || '')));
-        } catch (err) {
-            console.error('fetchUsers error:', err);
+            // Solo consultamos public.profiles para evitar "usuarios fantasma" del esquema crm
+            const { data, error } = await supabase.from('profiles').select('*').order('email');
+            if (error) throw error;
+            console.log("Settings Audit: Fetched Profiles:", data);
+            setUsers((data || []) as Profile[]);
+        } catch (error: any) {
+            console.error('Error fetching users:', error);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleEdit = (user: Profile) => {
-        if (user.email === 'aterraza@3dental.cl') {
-            alert("No se puede editar al Super Admin.");
-            return;
-        }
-        setEditingId(user.id);
-        setTempRole(user.role || 'seller');
-        setTempStatus(user.status || 'pending');
-    };
-
     const handleSave = async (id: string) => {
         try {
-            const { error: pubError } = await supabase.from('profiles').update({ role: tempRole, status: tempStatus }).eq('id', id);
+            const { error } = await supabase.from('profiles').update({
+                role: tempRole,
+                status: tempStatus,
+                supervisor_id: tempSupervisor || null
+            }).eq('id', id);
+
+            if (error) {
+                alert('Error al actualizar en tabla principal: ' + error.message);
+                return;
+            }
+
             try {
                 await (supabase.schema('crm').from('profiles') as any).update({ role: tempRole, status: tempStatus }).eq('id', id);
-            } catch (e) { }
+            } catch (e) {
+                console.warn("Silent failure updating crm schema profile:", e);
+            }
 
-            if (pubError) throw pubError;
-            alert('Usuario actualizado.');
+            alert('Usuario actualizado correctamente.');
             setEditingId(null);
             fetchUsers();
         } catch (error: any) {
-            alert('Error: ' + error.message);
+            console.error("Save error:", error);
+            alert('Error crítico: ' + error.message);
+        }
+    };
+
+    const handleTogglePermission = (role: string, perm: string) => {
+        if (role === 'manager') return; // Manager always has everything
+        setRolePerms(prev => {
+            const current = prev[role] || [];
+            if (current.includes(perm)) {
+                return { ...prev, [role]: current.filter(p => p !== perm) };
+            } else {
+                return { ...prev, [role]: [...current, perm] };
+            }
+        });
+    };
+
+    const handleSaveRolePermissions = async () => {
+        setSavingPerms(true);
+        try {
+            // Transform matrix into array of rows
+            const rows: any[] = [];
+
+            // 1. Force 'manager' and 'admin' to always have EVERYTHING (Safety redundancy)
+            permissionList.forEach(p => {
+                rows.push({ role: 'manager', permission: p.key });
+                rows.push({ role: 'admin', permission: p.key });
+            });
+
+            // 2. Add other roles from current state (excluding managers as we already forced them)
+            Object.entries(rolePerms).forEach(([role, perms]) => {
+                if (role === 'manager' || role === 'admin') return;
+                perms.forEach(p => {
+                    rows.push({ role, permission: p });
+                });
+            });
+
+            // Delete existing and insert new (simplified sync)
+            await supabase.from('role_permissions').delete().neq('role', 'super_admin_placeholder');
+            const { error } = await supabase.from('role_permissions').insert(rows);
+
+            if (error) throw error;
+            alert('Matriz de permisos actualizada correctamente y accesos de Administrador blindados.');
+        } catch (error: any) {
+            console.error('Error saving perms:', error);
+            alert('Error al guardar: ' + error.message);
+        } finally {
+            setSavingPerms(false);
         }
     };
 
@@ -142,87 +156,123 @@ const Settings: React.FC = () => {
         e.preventDefault();
         setSendingInvite(true);
         try {
+            // 1. Verificar duplicados y crear perfil
             const { data: existing } = await supabase.from('profiles').select('id').eq('email', inviteData.email).maybeSingle();
             if (existing) {
                 alert("Este usuario ya existe.");
+                setSendingInvite(false);
                 return;
             }
 
             const newId = crypto.randomUUID();
-            const profileData = { id: newId, email: inviteData.email.toLowerCase(), full_name: inviteData.full_name, role: inviteData.role, status: 'active' };
+            const profileData = {
+                id: newId,
+                email: inviteData.email.toLowerCase(),
+                full_name: inviteData.full_name,
+                role: inviteData.role,
+                status: 'active'
+            };
 
-            const { error: pubErr } = await supabase.from('profiles').insert(profileData);
-            try {
-                await (supabase.schema('crm').from('profiles') as any).insert(profileData);
-            } catch (e) { }
+            await supabase.from('profiles').insert(profileData);
+            try { await (supabase.schema('crm').from('profiles') as any).insert(profileData); } catch (e) { }
 
-            if (pubErr) throw pubErr;
-
+            // 2. Envío de Correo vía Gmail API
             const { data: { session } } = await supabase.auth.getSession();
-            if (session?.provider_token) {
+            const providerToken = (session as any)?.provider_token;
+
+            if (!providerToken) {
+                console.warn("No provider token found for Gmail API");
+                alert('Invitación guardada, pero el correo no pudo enviarse automáticamente.\n\nMotivo: No se detectó una sesión de Google activa con permisos de envío. Asegúrate de haber iniciado sesión con Google.');
+            } else {
                 const subject = "Bienvenido a 3dental CRM 🏥";
-                const message = `Hola ${inviteData.full_name},\n\nSe te ha dado acceso con el rol de ${inviteData.role.toUpperCase()}.\n\nEnlace: https://3dental-crm.vercel.app/`;
-                const rawMime = [`From: ${session.user.email}`, `To: ${inviteData.email}`, `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset="UTF-8"', '', message].join('\r\n');
-                const encoded = btoa(unescape(encodeURIComponent(rawMime))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { 'Authorization': `Bearer ${session.provider_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw: encoded }) });
+                const message = `Hola ${inviteData.full_name},\n\nSe te ha dado acceso al CRM de 3dental con el rol de ${inviteData.role.toUpperCase()}.\n\nYa puedes ingresar a la plataforma utilizando tu cuenta de Google en el siguiente enlace:\n\nhttps://3dental-crm.vercel.app/\n\nSaludos,\nEquipo 3dental`;
+
+                // Construcción de mensaje MIME para Gmail
+                const utf8Encode = new TextEncoder();
+                const subjectEncoded = btoa(String.fromCharCode(...utf8Encode.encode(subject)));
+
+                const rawMimeMessage = [
+                    `From: ${session?.user.email}`,
+                    `To: ${inviteData.email}`,
+                    `Subject: =?utf-8?B?${subjectEncoded}?=`,
+                    'MIME-Version: 1.0',
+                    'Content-Type: text/plain; charset="UTF-8"',
+                    'Content-Transfer-Encoding: 7bit',
+                    '',
+                    message
+                ].join('\r\n');
+
+                const encodedMessage = btoa(unescape(encodeURIComponent(rawMimeMessage)))
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
+
+                const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${providerToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ raw: encodedMessage })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    console.error("Gmail API Error:", errData);
+                    alert('Error técnico al enviar el correo. El usuario fue registrado, pero el email falló.');
+                } else {
+                    alert('Invitación enviada y correo despachado con éxito.');
+                }
             }
 
-            alert('Invitación enviada.');
             setIsInviteModalOpen(false);
             setInviteData({ email: '', full_name: '', role: 'seller' });
             fetchUsers();
         } catch (error: any) {
-            alert('Error: ' + error.message);
+            console.error('Error in handleInviteUser:', error);
+            alert('Error al procesar invitación: ' + error.message);
         } finally {
             setSendingInvite(false);
         }
     };
 
     const handleDeleteUser = async (id: string, email: string) => {
-        if (email === 'aterraza@3dental.cl') {
-            alert("No es posible borrar al Super Admin.");
-            return;
-        }
-
-        if (!window.confirm(`¿Estás seguro de eliminar permanentemente a ${email}? Se borrarán todas sus visitas y desvincularán sus clientes.`)) {
-            return;
-        }
+        if (email === 'aterraza@3dental.cl' || !window.confirm(`¿BORRADO DEFINITIVO de ${email}?`)) return;
 
         try {
-            // 1. Unbind from clients (created_by)
+            // 1. Limpieza de Dependencias (Foreign Keys)
             await supabase.from('clients').update({ created_by: null }).eq('created_by', id);
 
-            // 2. Clear activity records by this user
+            const { data: visits } = await supabase.from('visits').select('id').eq('sales_rep_id', id);
+            if (visits && visits.length > 0) {
+                const visitIds = visits.map(v => v.id);
+                await supabase.from('orders').update({ visit_id: null }).in('visit_id', visitIds);
+            }
+
             await supabase.from('visits').delete().eq('sales_rep_id', id);
             await supabase.from('quotations').update({ seller_id: null }).eq('seller_id', id);
             await supabase.from('delivery_routes').update({ driver_id: null }).eq('driver_id', id);
-
-            // 3. Clear Task assignments
             await supabase.from('tasks').delete().eq('assigned_to', id);
             await supabase.from('tasks').delete().eq('assigned_by', id);
-
-            // 4. Delete Meta configurations
             await supabase.from('meta_config').delete().eq('id', id);
 
-            // 5. Delete from public schema
-            const { error: pubErr } = await supabase.from('profiles').delete().eq('id', id);
+            // 2. Borrado Esquema CRM (Silencioso - best effort)
+            try { await (supabase.schema('crm').from('profiles') as any).delete().eq('id', id); } catch (e) { }
 
-            // 6. Delete from crm schema silently
-            try {
-                await (supabase.schema('crm').from('profiles') as any).delete().eq('id', id);
-            } catch (e) { }
+            // 3. Borrado Final en esquema Public (Fuente de Verdad)
+            const { error: pubErr } = await supabase.from('profiles').delete().eq('id', id);
 
             if (pubErr) throw pubErr;
 
-            alert('Usuario eliminado con éxito de todos los registros.');
+            alert(`Usuario ${email} eliminado correctamente.`);
             fetchUsers();
         } catch (error: any) {
-            console.error('Delete error:', error);
-            alert('Error al eliminar: ' + (error.message || 'Existen restricciones de base de datos pendientes.'));
+            console.error('Error al eliminar usuario:', error);
+            alert('Error en el borrado: ' + error.message);
         }
     };
 
-    if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) return <div className="p-20 text-center text-gray-400 font-bold shrink-0 grow h-full flex flex-col items-center justify-center">Acceso Denegado</div>;
+    if (!profile || (!isSupervisor && !hasPermission('MANAGE_USERS'))) return <div className="p-20 text-center font-bold">Acceso Denegado</div>;
 
     const filteredUsers = users.filter(u => (u.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (u.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()));
 
@@ -257,6 +307,7 @@ const Settings: React.FC = () => {
                                     <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Perfil</th>
                                     <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Rol</th>
                                     <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Estado</th>
+                                    <th className="px-8 py-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Supervisor / Jefe</th>
                                     <th className="px-8 py-4 text-right text-xs font-black text-gray-400 uppercase tracking-widest">Acciones</th>
                                 </tr>
                             </thead>
@@ -300,6 +351,24 @@ const Settings: React.FC = () => {
                                                     </div>
                                                 )}
                                             </td>
+                                            <td className="px-8 py-6">
+                                                {editingId === user.id ? (
+                                                    <select
+                                                        value={tempSupervisor || ''}
+                                                        onChange={(e) => setTempSupervisor(e.target.value || null)}
+                                                        className="bg-gray-50 border-none text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 block w-full p-3 font-bold shadow-sm"
+                                                    >
+                                                        <option value="">Sin Supervisor</option>
+                                                        {users.filter(u => u.id !== user.id && (u.role === 'jefe' || u.role === 'manager' || u.role === 'admin')).map(u => (
+                                                            <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <span className="text-xs font-bold text-gray-500">
+                                                        {users.find(u => u.id === user.supervisor_id)?.full_name || users.find(u => u.id === user.supervisor_id)?.email || '-'}
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td className="px-8 py-6 text-right">
                                                 {editingId === user.id ? (
                                                     <div className="flex justify-end gap-3">
@@ -309,7 +378,19 @@ const Settings: React.FC = () => {
                                                 ) : (
                                                     <div className="flex justify-end items-center gap-6">
                                                         <button onClick={() => handleDeleteUser(user.id, user.email || '')} disabled={user.email === 'aterraza@3dental.cl'} className="text-gray-300 hover:text-rose-500 transition-all disabled:opacity-0 hover:scale-125"><Trash2 size={18} /></button>
-                                                        <button onClick={() => handleEdit(user)} disabled={user.email === 'aterraza@3dental.cl'} className="text-indigo-600 hover:text-indigo-800 font-black text-[10px] uppercase tracking-widest group-hover:translate-x-[-4px] transition-all flex items-center gap-2 disabled:opacity-20"><Edit size={14} /> Editar</button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setEditingId(user.id);
+                                                                setTempRole(user.role || 'seller');
+                                                                setTempStatus(user.status || 'active');
+                                                                setTempSupervisor(user.supervisor_id || null);
+                                                            }}
+                                                            disabled={user.email === 'aterraza@3dental.cl'}
+                                                            className="text-indigo-600 hover:text-indigo-800 font-black text-[10px] uppercase tracking-widest group-hover:translate-x-[-4px] transition-all flex items-center gap-2 disabled:opacity-20"
+                                                        >
+                                                            <Edit size={14} /> Editar
+                                                        </button>
                                                     </div>
                                                 )}
                                             </td>
@@ -321,79 +402,101 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-500">
-                    <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
-                        <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                            <div>
-                                <h3 className="text-3xl font-black text-gray-900 flex items-center gap-3"><Shield className="text-indigo-600" /> Permisos Maestros</h3>
-                                <p className="text-gray-400 font-medium mt-1">Configura el ADN de cada rol en el sistema</p>
-                            </div>
-                            <button onClick={savePermissions} disabled={savingPerms} className="px-10 py-5 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-black active:scale-95 transition-all disabled:opacity-50 flex items-center gap-3"><Save size={20} /> Guardar Cambios</button>
+                <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
+                    <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
+                        <div>
+                            <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3"><Shield className="text-indigo-600" /> Matriz de Permisos</h3>
+                            <p className="text-sm text-gray-400 font-bold mt-1 uppercase tracking-wider">Configura qué puede hacer cada perfil</p>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="bg-white">
-                                    <tr>
-                                        <th className="p-10 text-[10px] font-black text-gray-400 uppercase tracking-widest border-r border-gray-100 sticky left-0 z-10 bg-white">Módulo / Permiso</th>
-                                        {roles.map(r => <th key={r} className="p-6 text-center text-[10px] font-black text-gray-900 uppercase tracking-widest min-w-[140px]">{r}</th>)}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {permissionList.map(p => (
-                                        <tr key={p.key} className="hover:bg-gray-50/30 transition-colors">
-                                            <td className="p-10 border-r border-gray-100 bg-white sticky left-0 z-10 shadow-sm">
-                                                <p className="font-black text-gray-900 text-sm leading-none">{p.label}</p>
-                                                <p className="text-[10px] text-gray-400 mt-1.5 font-medium leading-relaxed max-w-[200px]">{p.desc}</p>
-                                            </td>
-                                            {roles.map(r => {
-                                                const active = (rolePerms[r] || []).includes(p.key);
-                                                const locked = r === 'manager' && p.key === 'MANAGE_PERMISSIONS';
-                                                return (
-                                                    <td key={`${r}-${p.key}`} className="p-6 text-center">
-                                                        <button onClick={() => togglePermission(r, p.key)} disabled={locked} className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center transition-all ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 ring-4 ring-indigo-50' : 'bg-gray-50 text-gray-200 hover:bg-gray-100'} ${locked ? 'opacity-30' : 'active:scale-90 hover:scale-105'}`}>
-                                                            {active ? <CheckCircle size={28} /> : <Ban size={28} />}
-                                                        </button>
-                                                    </td>
-                                                );
-                                            })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                        <button
+                            onClick={handleSaveRolePermissions}
+                            disabled={savingPerms}
+                            className={`px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-2 transition-all ${savingPerms ? 'bg-gray-200 text-gray-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'}`}
+                        >
+                            {savingPerms ? 'Sincronizando...' : <><Save size={16} /> Aplicar Cambios</>}
+                        </button>
                     </div>
-                </div>
-            )}
 
-            {isInviteModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-md bg-black/40 animate-in fade-in duration-300">
-                    <div className="bg-white rounded-[3rem] w-full max-w-xl p-12 shadow-2xl relative animate-in zoom-in-95 duration-300 border border-gray-100">
-                        <h3 className="text-4xl font-black text-gray-900 mb-2">Crear Invitación</h3>
-                        <p className="text-gray-400 font-bold mb-10 text-lg leading-snug">Pre-registra al nuevo miembro y dale la bienvenida oficial.</p>
-                        <form onSubmit={handleInviteUser} className="space-y-8">
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Nombre y Apellido</label>
-                                <input required type="text" value={inviteData.full_name} onChange={e => setInviteData(p => ({ ...p, full_name: e.target.value }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black text-gray-900 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-gray-300" placeholder="Andrés Pereira" />
-                            </div>
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Email Corporativo</label>
-                                <input required type="email" value={inviteData.email} onChange={e => setInviteData(p => ({ ...p, email: e.target.value.toLowerCase() }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black text-gray-900 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-gray-300" placeholder="apereira@3dental.cl" />
-                            </div>
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Rol de Acceso</label>
-                                <select value={inviteData.role} onChange={e => setInviteData(p => ({ ...p, role: e.target.value }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black text-gray-900 focus:ring-4 focus:ring-indigo-100 transition-all appearance-none cursor-pointer">
-                                    {roles.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
-                                </select>
-                            </div>
-                            <div className="flex gap-4 pt-6">
-                                <button type="button" onClick={() => setIsInviteModalOpen(false)} disabled={sendingInvite} className="flex-1 h-16 text-gray-400 font-black uppercase tracking-widest text-xs hover:text-gray-600 transition-all">Cancelar</button>
-                                <button type="submit" disabled={sendingInvite} className="flex-[2] h-16 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black active:scale-95 transition-all disabled:opacity-50">{sendingInvite ? 'Enviando...' : 'Generar Invitación'}</button>
-                            </div>
-                        </form>
+                    <div className="overflow-x-auto p-4">
+                        <table className="w-full border-separate border-spacing-2">
+                            <thead>
+                                <tr>
+                                    <th className="p-4 text-left text-xs font-black text-gray-400 uppercase tracking-widest bg-gray-50 rounded-xl">Módulo / Capacidad</th>
+                                    {['manager', ...roles].map(role => (
+                                        <th key={role} className="p-4 text-center text-[10px] font-black uppercase tracking-widest bg-gray-50 rounded-xl min-w-[120px]">
+                                            <span className={role === 'manager' ? 'text-indigo-600' : 'text-gray-600'}>
+                                                {role === 'manager' ? 'Manager (Fijo)' : role}
+                                            </span>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {permissionList.map(perm => (
+                                    <tr key={perm.key} className="group hover:bg-gray-50/50 transition-colors">
+                                        <td className="p-6">
+                                            <p className="font-black text-gray-800 text-sm leading-none">{perm.label}</p>
+                                            <p className="text-[10px] text-gray-400 font-bold mt-1.5 leading-tight">{perm.desc}</p>
+                                        </td>
+                                        {['manager', ...roles].map(role => {
+                                            const isActive = role === 'manager' || (rolePerms[role] || []).includes(perm.key);
+                                            return (
+                                                <td key={role} className="p-4 text-center">
+                                                    <button
+                                                        onClick={() => handleTogglePermission(role, perm.key)}
+                                                        disabled={role === 'manager'}
+                                                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isActive
+                                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 scale-105'
+                                                            : 'bg-gray-100 text-gray-300 hover:bg-gray-200'
+                                                            } ${role === 'manager' ? 'cursor-default opacity-80' : ''}`}
+                                                    >
+                                                        {isActive ? <CheckCircle size={20} /> : <Ban size={20} />}
+                                                    </button>
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            )}
-        </div>
+            )
+            }
+
+            {
+                isInviteModalOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
+                        <div className="bg-white rounded-[3rem] w-full max-w-xl p-12 shadow-2xl relative border border-gray-100">
+                            <h3 className="text-4xl font-black text-gray-900 mb-2">Crear Invitación</h3>
+                            <form onSubmit={handleInviteUser} className="space-y-8">
+                                <input required type="text" value={inviteData.full_name} onChange={e => setInviteData(p => ({ ...p, full_name: e.target.value }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black" placeholder="Nombre" />
+                                <input required type="email" value={inviteData.email} onChange={e => setInviteData(p => ({ ...p, email: e.target.value.toLowerCase() }))} className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black" placeholder="Email" />
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Rol / Perfil</label>
+                                    <select
+                                        value={inviteData.role}
+                                        onChange={e => setInviteData(p => ({ ...p, role: e.target.value }))}
+                                        className="w-full h-16 px-8 bg-gray-50 border-none rounded-2xl font-black focus:ring-2 focus:ring-indigo-500 appearance-none"
+                                    >
+                                        <option value="seller">Vendedor</option>
+                                        <option value="driver">Repartidor (Driver)</option>
+                                        <option value="administrativo">Administrativo</option>
+                                        <option value="jefe">Jefe de Área</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex gap-4 pt-6">
+                                    <button type="button" onClick={() => setIsInviteModalOpen(false)} className="flex-1 h-16 text-gray-400 font-black text-xs uppercase">Cancelar</button>
+                                    <button type="submit" disabled={sendingInvite} className="flex-[2] h-16 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase shadow-2xl">{sendingInvite ? 'Enviando...' : 'Generar'}</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

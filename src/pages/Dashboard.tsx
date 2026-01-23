@@ -246,7 +246,9 @@ const Dashboard = () => {
                     .select('id, email, full_name, role');
 
                 const summary = await Promise.all((sellers || []).map(async (seller) => {
-                    // Visits
+                    const now = new Date();
+
+                    // 1. Fetch Visits (Including in_progress)
                     const { data: vData } = await supabase
                         .from('visits')
                         .select('client_id, check_in_time, check_out_time, status')
@@ -254,15 +256,23 @@ const Dashboard = () => {
                         .gte('check_in_time', isoStart)
                         .lte('check_in_time', isoEnd);
 
-                    // Quotations
-                    const { data: qData } = await supabase
-                        .from('quotations')
-                        .select('client_id, total_amount, interaction_type')
-                        .eq('seller_id', seller.id)
+                    // 2. Fetch Orders (Replacing quotations)
+                    const { data: oData } = await supabase
+                        .from('orders')
+                        .select('id, client_id, total_amount, visit_id, created_at')
+                        .eq('user_id', seller.id)
                         .gte('created_at', isoStart)
                         .lte('created_at', isoEnd);
 
-                    // New Clients
+                    // 3. Fetch Call Logs
+                    const { data: lData } = await supabase
+                        .from('call_logs')
+                        .select('client_id, created_at')
+                        .eq('user_id', seller.id)
+                        .gte('created_at', isoStart)
+                        .lte('created_at', isoEnd);
+
+                    // 4. New Clients
                     const { data: cData, count: cCount } = await supabase
                         .from('clients')
                         .select('name', { count: 'exact' })
@@ -270,8 +280,7 @@ const Dashboard = () => {
                         .gte('created_at', isoStart)
                         .lte('created_at', isoEnd);
 
-                    // Monthly Goal & Sales (For Admin Table)
-                    const now = new Date();
+                    // 5. Monthly Goal
                     const currentMonth = now.getMonth() + 1;
                     const currentYear = now.getFullYear();
                     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -285,7 +294,7 @@ const Dashboard = () => {
                         .eq('year', currentYear)
                         .maybeSingle();
 
-                    // FIXED: Query orders directly by user_id and date, not via visits
+                    // 6. Monthly Sales (From orders)
                     const { data: mOrders } = await supabase
                         .from('orders')
                         .select('total_amount')
@@ -296,65 +305,42 @@ const Dashboard = () => {
                     let sellerMonthSales = 0;
                     mOrders?.forEach(o => sellerMonthSales += o.total_amount || 0);
 
-                    // Last Interaction for Zone (Visit or Quotation)
-                    const [lastV, lastQ] = await Promise.all([
-                        supabase
-                            .from('visits')
-                            .select('check_in_time, clients(zone)')
-                            .eq('sales_rep_id', seller.id)
-                            .order('check_in_time', { ascending: false })
-                            .limit(1)
-                            .maybeSingle(),
-                        supabase
-                            .from('quotations')
-                            .select('created_at, clients(zone)')
-                            .eq('seller_id', seller.id)
-                            .order('created_at', { ascending: false })
-                            .limit(1)
-                            .maybeSingle()
-                    ]);
+                    // 7. Last Zone
+                    const { data: lastV } = await supabase
+                        .from('visits')
+                        .select('check_in_time, clients(zone)')
+                        .eq('sales_rep_id', seller.id)
+                        .order('check_in_time', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
 
-                    const vTime = lastV.data?.check_in_time ? new Date(lastV.data.check_in_time).getTime() : 0;
-                    const qTime = lastQ.data?.created_at ? new Date(lastQ.data.created_at).getTime() : 0;
-
-                    let finalZone = 'N/A';
-                    if (vTime > qTime) {
-                        finalZone = (lastV.data?.clients as any)?.zone || 'N/A';
-                    } else if (qTime > 0) {
-                        finalZone = (lastQ.data?.clients as any)?.zone || 'N/A';
-                    }
-
-                    // Calculate accurate time
+                    // Calculate Time
                     let totalMinutes = 0;
+                    const handledClientIds = new Set();
 
-                    // 1. Visits: Actual Duration for COMPLETED visits only
-                    const visitedClientIds = new Set();
+                    // A. Visits Time (Real duration or current elapsed)
                     vData?.forEach(v => {
-                        visitedClientIds.add(v.client_id);
-                        if (v.status === 'completed' && v.check_in_time && v.check_out_time) {
-                            const start = new Date(v.check_in_time).getTime();
-                            const end = new Date(v.check_out_time).getTime();
-                            const durationMins = Math.floor((end - start) / (1000 * 60));
-                            totalMinutes += durationMins; // Exact duration, no minimum
+                        handledClientIds.add(v.client_id);
+                        const start = new Date(v.check_in_time).getTime();
+                        const end = v.check_out_time ? new Date(v.check_out_time).getTime() : now.getTime();
+                        const duration = Math.floor((end - start) / (1000 * 60));
+                        totalMinutes += Math.max(0, duration);
+                    });
+
+                    // B. Orders Time (Digital Management: 15 min if not in visit)
+                    oData?.forEach(o => {
+                        if (!o.visit_id) {
+                            handledClientIds.add(o.client_id);
+                            totalMinutes += 15; // Standard digital order time
                         }
                     });
 
-                    // 2. Quotations: 7 mins for WSP/Phone, 20 for others if no visit
-                    qData?.forEach(q => {
-                        if (!visitedClientIds.has(q.client_id)) {
-                            if (q.interaction_type === 'WhatsApp' || q.interaction_type === 'Teléfono') {
-                                totalMinutes += 7;
-                            } else {
-                                totalMinutes += 20; // Fallback for legacy data
-                            }
-                        }
+                    // C. Calls Time (7 min)
+                    lData?.forEach(l => {
+                        handledClientIds.add(l.client_id);
+                        totalMinutes += 7;
                     });
 
-                    const uniqueActivityClientIds = new Set([
-                        ...(vData?.map(v => v.client_id) || []),
-                        ...(qData?.map(q => q.client_id) || [])
-                    ]);
-                    const activityCount = uniqueActivityClientIds.size;
                     const hours = totalMinutes / 60;
                     const h = Math.floor(hours);
                     const m = Math.round((hours - h) * 60);
@@ -363,13 +349,13 @@ const Dashboard = () => {
                         id: seller.id,
                         name: seller.full_name || seller.email?.split('@')[0].toUpperCase(),
                         role: seller.role,
-                        visits: activityCount,
+                        visits: handledClientIds.size,
                         clientsCreated: cCount || 0,
                         newClientNames: (cData || []).map(c => c.name),
-                        quoteAmount: qData?.reduce((sum, q) => sum + (q.total_amount || 0), 0) || 0,
-                        quoteCount: qData?.length || 0,
+                        quoteAmount: oData?.reduce((sum, o) => sum + (o.total_amount || 0), 0) || 0,
+                        quoteCount: oData?.length || 0,
                         hours: `${h}h ${m}m`,
-                        zone: finalZone,
+                        zone: (lastV?.clients as any)?.zone || 'N/A',
                         monthlyGoal: sellerGoal?.target_amount || 0,
                         monthlySales: sellerMonthSales
                     };
@@ -378,7 +364,8 @@ const Dashboard = () => {
                 setAdminSummary(summary);
             } else if (profile && !hasPermission('VIEW_TEAM_STATS')) {
                 // Seller Logic: Personal Stats
-                // Note: We already fetched 'visits' in dailyVisits, but this logic calculates specific stats so strictly keeping it for now
+                const now = new Date();
+
                 const { data: visits } = await supabase
                     .from('visits')
                     .select('*, clients(name, zone)')
@@ -387,75 +374,82 @@ const Dashboard = () => {
                     .lte('check_in_time', isoEnd)
                     .order('check_in_time', { ascending: false });
 
-                const { data: quotations } = await supabase
-                    .from('quotations')
+                const { data: orders } = await supabase
+                    .from('orders')
                     .select('*, clients(name, zone)')
-                    .eq('seller_id', profile.id)
+                    .eq('user_id', profile.id)
                     .gte('created_at', isoStart)
                     .lte('created_at', isoEnd);
 
-                // Unify activities by client to avoid double counting
-                // A visit and a quotation for the same client today count as ONE activity block (20 min)
-                const visitedClientIds = new Set(visits?.map(v => v.client_id));
-                const uniqueActivityClientIds = new Set([
-                    ...visitedClientIds,
-                    ...(quotations?.map(q => q.client_id) || [])
-                ]);
+                const { data: logs } = await supabase
+                    .from('call_logs')
+                    .select('*, clients(name, zone)')
+                    .eq('user_id', profile.id)
+                    .gte('created_at', isoStart)
+                    .lte('created_at', isoEnd);
 
-                // Calculate accurate time for Seller
                 let totalMinutes = 0;
+                const handledClientIds = new Set();
 
-                // 1. Visits: Actual Duration for COMPLETED visits only
-                // Note: We use the visitedClientIds set created above
+                // 1. Visits: Duration (Real or Current)
                 visits?.forEach(v => {
-                    if (v.status === 'completed' && v.check_in_time && v.check_out_time) {
-                        const start = new Date(v.check_in_time).getTime();
-                        const end = new Date(v.check_out_time).getTime();
-                        const durationMins = Math.floor((end - start) / (1000 * 60));
-                        totalMinutes += durationMins; // Exact duration
+                    handledClientIds.add(v.client_id);
+                    const start = new Date(v.check_in_time).getTime();
+                    const end = v.check_out_time ? new Date(v.check_out_time).getTime() : now.getTime();
+                    const duration = Math.floor((end - start) / (1000 * 60));
+                    totalMinutes += Math.max(0, duration);
+                });
+
+                // 2. Orders: Digital Management (if not tied to a visit)
+                orders?.forEach(o => {
+                    if (!o.visit_id) {
+                        handledClientIds.add(o.client_id);
+                        totalMinutes += 15;
                     }
                 });
 
-                // 2. Quotations: 7 mins for WSP/Phone
-                quotations?.forEach(q => {
-                    if (!visitedClientIds.has(q.client_id)) {
-                        if (q.interaction_type === 'WhatsApp' || q.interaction_type === 'Teléfono') {
-                            totalMinutes += 7;
-                        } else {
-                            totalMinutes += 20; // Fallback
-                        }
-                    }
+                // 3. Calls: 7 mins
+                logs?.forEach(l => {
+                    handledClientIds.add(l.client_id);
+                    totalMinutes += 7;
                 });
 
-                const activityCount = uniqueActivityClientIds.size;
                 const hours = totalMinutes / 60;
                 const h = Math.floor(hours);
                 const m = Math.round((hours - h) * 60);
 
                 const zones = Array.from(new Set([
                     ...(visits?.map(v => (v.clients as any)?.zone).filter(Boolean) || []),
-                    ...(quotations?.map(q => (q.clients as any)?.zone).filter(Boolean) || [])
+                    ...(orders?.map(o => (o.clients as any)?.zone).filter(Boolean) || []),
+                    ...(logs?.map(l => (l.clients as any)?.zone).filter(Boolean) || [])
                 ])) as string[];
 
-                // Combine for recent activity list
+                // Recent activity list
                 const combinedActivity = [
                     ...(visits?.map(v => ({ ...v, type: 'Visita', time: v.check_in_time })) || []),
-                    ...(quotations?.filter(q => !visitedClientIds.has(q.client_id)).map(q => ({
-                        ...q,
-                        type: 'Cotización',
-                        time: q.created_at,
-                        clients: q.clients,
-                        status: q.interaction_type || 'Digital'
+                    ...(orders?.filter(o => !o.visit_id).map(o => ({
+                        ...o,
+                        type: 'Pedido Digital',
+                        time: o.created_at,
+                        clients: o.clients,
+                        status: 'Completado'
+                    })) || []),
+                    ...(logs?.map(l => ({
+                        ...l,
+                        type: 'Llamada',
+                        time: l.created_at,
+                        clients: l.clients,
+                        status: l.status || 'Finalizada'
                     })) || [])
                 ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
                 setStats({
-                    todayVisits: activityCount, // Renamed mentally to Activity Count
+                    todayVisits: handledClientIds.size,
                     effectiveHours: `${h}h ${m}m`,
                     zones: zones,
                     recentVisits: combinedActivity,
                     newClientsToday: 0,
-                    quotationsToday: quotations?.length || 0
+                    quotationsToday: orders?.length || 0
                 });
             }
         } catch (error) {
@@ -678,7 +672,7 @@ const Dashboard = () => {
                             <p className="text-3xl font-black text-gray-900">${adminSummary.reduce((sum, s) => sum + s.quoteAmount, 0).toLocaleString()}</p>
                         </div>
                         <div className="premium-card p-6 border-l-4 border-l-amber-600">
-                            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1 text-xs">Cotizaciones Emitidas</p>
+                            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1 text-xs">Pedidos Cerrados</p>
                             <p className="text-3xl font-black text-gray-900">{adminSummary.reduce((sum, s) => sum + s.quoteCount, 0)}</p>
                         </div>
                         <div className="premium-card p-6 border-l-4 border-l-blue-600">
@@ -929,7 +923,7 @@ const Dashboard = () => {
                             </div>
                             <p className="text-xs text-gray-400 font-bold mt-4 flex items-center">
                                 <AlertCircle size={12} className="mr-2" />
-                                Calculado: 20 min por visita efectiva
+                                Basado en Visitas, Pedidos y Llamadas
                             </p>
                         </div>
 

@@ -5,7 +5,7 @@ import { Users, TrendingUp, Calendar, MapPin, ChevronRight, LayoutDashboard, Clo
 import { Link, Navigate } from 'react-router-dom';
 
 const TeamStats = () => {
-    const { isSupervisor, hasPermission, loading: userLoading, profile: currentUser } = useUser();
+    const { isSupervisor, isManager, isChief, hasPermission, permissions, loading: userLoading, profile: currentUser } = useUser();
     const [teamData, setTeamData] = useState<any[]>([]);
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [stats, setStats] = useState({
@@ -79,11 +79,11 @@ const TeamStats = () => {
     };
 
     useEffect(() => {
-        if (isSupervisor && currentUser) {
+        if (hasPermission('VIEW_TEAM_STATS') && currentUser) {
             fetchTeamData();
             supabase.from('clients').select('id, name').then(({ data }) => setClients(data || []));
         }
-    }, [isSupervisor, currentUser, selectedDate]);
+    }, [hasPermission, currentUser, selectedDate]);
 
     const fetchTeamData = async () => {
         setLoading(true);
@@ -99,15 +99,35 @@ const TeamStats = () => {
             visits(*, clients(name), orders(*))
         `);
 
-        // If not having VIEW_ALL_TEAM_STATS, only show assigned subordinates
-        if (!hasPermission('VIEW_ALL_TEAM_STATS')) {
+        // SECURITY REINFORCEMENT V7 (RADICAL):
+        // Only literal 'manager' or 'admin' roles can bypass the supervisor filter.
+        // We do a triple check here.
+        const userRole = (currentUser?.role || '').toLowerCase();
+        const isActuallyManager = userRole === 'manager' || userRole === 'admin';
+        const isActuallyChief = userRole === 'jefe';
+
+        console.log("TeamStats DEBUG V7:", {
+            email: currentUser?.email,
+            dbRole: currentUser?.role,
+            isActuallyManager,
+            isActuallyChief,
+            canViewAll: isActuallyManager && !isActuallyChief
+        });
+
+        // Fail-safe: If anything is ambiguous, we restrict to subordinates.
+        let finalCanViewAll = isActuallyManager;
+        if (isActuallyChief) finalCanViewAll = false; // Chief ALWAYS restricted
+
+        if (!finalCanViewAll) {
+            console.log("TeamStats: RADICAL FORCED supervisor filter for ID:", currentUser!.id);
             query = query.eq('supervisor_id', currentUser!.id);
         } else {
+            console.log("TeamStats: Global visibility (Super Admin).");
             query = query.neq('id', currentUser!.id);
         }
 
         const { data: profilesData, error } = await query;
-        console.log("TeamStats DEBUG V5 (Profiles):", { profilesData, error });
+        console.log("TeamStats Profiles Query Result:", { count: profilesData?.length, error });
 
         if (profilesData) {
             // 2. SAFE MANUAL FETCH for Tasks to avoid FK issues
@@ -182,8 +202,8 @@ const TeamStats = () => {
         }
     };
 
-    if (userLoading || (isSupervisor && loading && teamData.length === 0)) return <div className="p-8 text-center text-gray-500">Cargando ecosistema de equipo...</div>;
-    if (!isSupervisor) return <Navigate to="/" />;
+    if (userLoading || (hasPermission('VIEW_TEAM_STATS') && loading && teamData.length === 0)) return <div className="p-8 text-center text-gray-500 italic font-black uppercase tracking-widest animate-pulse">Cargando ecosistema...</div>;
+    if (!hasPermission('VIEW_TEAM_STATS')) return <Navigate to="/" />;
 
     return (
         <div className="space-y-8 max-w-6xl mx-auto pb-20">
