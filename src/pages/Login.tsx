@@ -8,7 +8,7 @@ const Login = () => {
                 redirectTo: `${window.location.origin}/`,
                 queryParams: {
                     access_type: 'offline',
-                    prompt: 'consent',
+                    prompt: 'select_account',
                 },
                 scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.compose'
             }
