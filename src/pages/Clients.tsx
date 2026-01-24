@@ -106,6 +106,42 @@ const ClientsContent = () => {
     const placesLib = useMapsLibrary('places');
     const inputRef = useRef<HTMLInputElement>(null);
 
+    // PERSISTENCE LOGIC: Save state to LocalStorage to prevent data loss on mobile app switch
+    useEffect(() => {
+        const savedState = localStorage.getItem('crm_client_draft');
+        if (savedState) {
+            try {
+                const parsed = JSON.parse(savedState);
+                // Only restore if it was open
+                if (parsed.isModalOpen) {
+                    setClientForm(parsed.clientForm);
+                    setManualLocation(parsed.manualLocation);
+                    setIsEditing(parsed.isEditing);
+                    setIsModalOpen(true);
+                }
+            } catch (e) {
+                console.error("Error restoring client draft:", e);
+                localStorage.removeItem('crm_client_draft');
+            }
+        }
+    }, []);
+
+    // Save state whenever it changes
+    useEffect(() => {
+        if (isModalOpen) {
+            const stateToSave = {
+                clientForm,
+                manualLocation,
+                isEditing,
+                isModalOpen: true
+            };
+            localStorage.setItem('crm_client_draft', JSON.stringify(stateToSave));
+        } else {
+            // If closed explicitly, clear the draft to avoid phantom openings later
+            localStorage.removeItem('crm_client_draft');
+        }
+    }, [clientForm, manualLocation, isEditing, isModalOpen]);
+
     useEffect(() => {
         if (!placesLib || !inputRef.current || !isModalOpen) return;
 
