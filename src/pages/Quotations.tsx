@@ -732,7 +732,7 @@ const Quotations: React.FC = () => {
             {
                 isItemModalOpen && selectedClient && (
                     <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+                        <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[85dvh]">
                             <div className="p-6 bg-gradient-to-br from-indigo-600 to-purple-700 text-white flex justify-between items-center shrink-0">
                                 <div>
                                     <h3 className="font-bold text-lg">Detalles de Cotización</h3>
@@ -1026,17 +1026,17 @@ const Quotations: React.FC = () => {
                             )
                         }
 
-                        <div className="p-6 border-t border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-center shrink-0 gap-4 md:gap-0">
+                        <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-center shrink-0 gap-3 md:gap-0">
                             <div className="w-full md:w-auto text-center md:text-left">
                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Estimado</p>
-                                <p className="text-2xl font-black text-indigo-600">
+                                <p className="text-xl md:text-2xl font-black text-indigo-600">
                                     $ {formItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0).toLocaleString()}
                                 </p>
                             </div>
                             <button
                                 onClick={() => setIsInteractionModalOpen(true)}
                                 disabled={submitting}
-                                className="w-full md:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                                className="w-full md:w-auto bg-indigo-600 text-white px-8 py-3 md:py-4 rounded-2xl font-bold flex items-center justify-center shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
                             >
                                 <CheckCircle2 size={20} className="mr-2" />
                                 {submitting ? 'Confirmando...' : 'Confirmar Cotización'}
