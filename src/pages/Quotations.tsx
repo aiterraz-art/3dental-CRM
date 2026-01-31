@@ -757,8 +757,8 @@ const Quotations: React.FC = () => {
 
                                 <div className="space-y-4">
                                     {formItems.map((item, index) => (
-                                        <div key={index} className="grid grid-cols-12 gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 relative group">
-                                            <div className="col-span-3 relative">
+                                        <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 relative group">
+                                            <div className="col-span-1 md:col-span-3 relative">
                                                 <label className="text-[10px] uppercase font-bold text-gray-400">Código (SKU)</label>
                                                 <input
                                                     type="text"
@@ -809,7 +809,7 @@ const Quotations: React.FC = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="col-span-9 relative">
+                                            <div className="col-span-1 md:col-span-9 relative">
                                                 <label className="text-[10px] uppercase font-bold text-gray-400">Descripción</label>
                                                 <input
                                                     type="text"
@@ -865,7 +865,7 @@ const Quotations: React.FC = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="col-span-3">
+                                            <div className="col-span-1 md:col-span-3">
                                                 <label className="text-[10px] uppercase font-bold text-gray-400">Cantidad</label>
                                                 <input
                                                     type="number"
@@ -879,7 +879,7 @@ const Quotations: React.FC = () => {
                                                     }}
                                                 />
                                             </div>
-                                            <div className="col-span-4">
+                                            <div className="col-span-1 md:col-span-4">
                                                 <label className="text-[10px] uppercase font-bold text-gray-400">Precio Unitario</label>
                                                 <input
                                                     type="number"
@@ -894,7 +894,7 @@ const Quotations: React.FC = () => {
                                                     }}
                                                 />
                                             </div>
-                                            <div className="col-span-5 flex items-end justify-end">
+                                            <div className="col-span-1 md:col-span-5 flex items-end justify-end md:justify-end">
                                                 <p className="font-black text-lg text-gray-700">$ {((item.qty || 0) * (item.price || 0)).toLocaleString()}</p>
                                             </div>
 
@@ -960,87 +960,88 @@ const Quotations: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {createError && (
-                            <div className="mx-6 mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
-                                <span className="font-bold">Error:</span>
-                                <span className="text-sm">{createError}</span>
-                            </div>
-                        )}
 
-                        {/* Location Picker Modal */}
-                        {
-                            isLocationPickerOpen && (
-                                <div className="fixed inset-0 z-[2100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                                    <div className="bg-white w-full max-w-4xl h-[600px] rounded-3xl shadow-2xl overflow-hidden relative flex flex-col">
-                                        <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow-lg border border-gray-100">
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Simulación GPS</p>
-                                            <p className="font-bold text-indigo-600">Haz click en el mapa para fijar ubicación</p>
-                                        </div>
-                                        <button
-                                            onClick={() => setIsLocationPickerOpen(false)}
-                                            className="absolute top-4 right-4 z-10 bg-white text-gray-400 p-2 rounded-full hover:bg-gray-100 shadow-lg transition-all"
-                                        >
-                                            <XIcon size={24} />
-                                        </button>
+                            {createError && (
+                                <div className="mx-6 mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
+                                    <span className="font-bold">Error:</span>
+                                    <span className="text-sm">{createError}</span>
+                                </div>
+                            )}
 
-                                        <div className="flex-1 w-full h-full relative">
-                                            <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}>
-                                                <Map
-                                                    defaultCenter={{ lat: -33.4489, lng: -70.6693 }}
-                                                    defaultZoom={12}
-                                                    mapId="PICKER_MAP"
-                                                    className="w-full h-full"
-                                                    disableDefaultUI={false}
-                                                    onClick={(e) => {
-                                                        if (e.detail.latLng) {
-                                                            setManualLocation({ lat: e.detail.latLng.lat, lng: e.detail.latLng.lng });
-                                                            // Optional: visual feedback or auto-close? 
-                                                            // Let's keep it open so they can adjust, but maybe show a toast or marker
-                                                        }
-                                                    }}
-                                                >
-                                                    {manualLocation && (
-                                                        <AdvancedMarker position={manualLocation}>
-                                                            <Pin background={'#22c55e'} borderColor={'#15803d'} glyphColor={'white'} scale={1.3} />
-                                                        </AdvancedMarker>
-                                                    )}
-                                                </Map>
-                                            </APIProvider>
+                            {/* Location Picker Modal */}
+                            {
+                                isLocationPickerOpen && (
+                                    <div className="fixed inset-0 z-[2100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                                        <div className="bg-white w-full max-w-4xl h-[600px] rounded-3xl shadow-2xl overflow-hidden relative flex flex-col">
+                                            <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow-lg border border-gray-100">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Simulación GPS</p>
+                                                <p className="font-bold text-indigo-600">Haz click en el mapa para fijar ubicación</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setIsLocationPickerOpen(false)}
+                                                className="absolute top-4 right-4 z-10 bg-white text-gray-400 p-2 rounded-full hover:bg-gray-100 shadow-lg transition-all"
+                                            >
+                                                <XIcon size={24} />
+                                            </button>
 
-                                            {manualLocation && (
-                                                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
-                                                    <button
-                                                        onClick={() => setIsLocationPickerOpen(false)}
-                                                        className="bg-green-500 text-white px-8 py-3 rounded-full font-bold shadow-xl hover:bg-green-600 transition-all active:scale-95 flex items-center"
+                                            <div className="flex-1 w-full h-full relative">
+                                                <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}>
+                                                    <Map
+                                                        defaultCenter={{ lat: -33.4489, lng: -70.6693 }}
+                                                        defaultZoom={12}
+                                                        mapId="PICKER_MAP"
+                                                        className="w-full h-full"
+                                                        disableDefaultUI={false}
+                                                        onClick={(e) => {
+                                                            if (e.detail.latLng) {
+                                                                setManualLocation({ lat: e.detail.latLng.lat, lng: e.detail.latLng.lng });
+                                                                // Optional: visual feedback or auto-close? 
+                                                                // Let's keep it open so they can adjust, but maybe show a toast or marker
+                                                            }
+                                                        }}
                                                     >
-                                                        <CheckCircle2 size={18} className="mr-2" />
-                                                        Confirmar Ubicación
-                                                    </button>
-                                                </div>
-                                            )}
+                                                        {manualLocation && (
+                                                            <AdvancedMarker position={manualLocation}>
+                                                                <Pin background={'#22c55e'} borderColor={'#15803d'} glyphColor={'white'} scale={1.3} />
+                                                            </AdvancedMarker>
+                                                        )}
+                                                    </Map>
+                                                </APIProvider>
+
+                                                {manualLocation && (
+                                                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
+                                                        <button
+                                                            onClick={() => setIsLocationPickerOpen(false)}
+                                                            className="bg-green-500 text-white px-8 py-3 rounded-full font-bold shadow-xl hover:bg-green-600 transition-all active:scale-95 flex items-center"
+                                                        >
+                                                            <CheckCircle2 size={18} className="mr-2" />
+                                                            Confirmar Ubicación
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            )
-                        }
+                                )
+                            }
 
-                        <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-center shrink-0 gap-3 md:gap-0">
-                            <div className="w-full md:w-auto text-center md:text-left">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Estimado</p>
-                                <p className="text-xl md:text-2xl font-black text-indigo-600">
-                                    $ {formItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0).toLocaleString()}
-                                </p>
+                            <div className="p-4 md:p-6 border-t border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-center shrink-0 gap-3 md:gap-0">
+                                <div className="w-full md:w-auto text-center md:text-left">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Estimado</p>
+                                    <p className="text-xl md:text-2xl font-black text-indigo-600">
+                                        $ {formItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0).toLocaleString()}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setIsInteractionModalOpen(true)}
+                                    disabled={submitting}
+                                    className="w-full md:w-auto bg-indigo-600 text-white px-8 py-3 md:py-4 rounded-2xl font-bold flex items-center justify-center shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                                >
+                                    <CheckCircle2 size={20} className="mr-2" />
+                                    {submitting ? 'Confirmando...' : 'Confirmar Cotización'}
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setIsInteractionModalOpen(true)}
-                                disabled={submitting}
-                                className="w-full md:w-auto bg-indigo-600 text-white px-8 py-3 md:py-4 rounded-2xl font-bold flex items-center justify-center shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
-                            >
-                                <CheckCircle2 size={20} className="mr-2" />
-                                {submitting ? 'Confirmando...' : 'Confirmar Cotización'}
-                            </button>
                         </div>
                     </div>
 
