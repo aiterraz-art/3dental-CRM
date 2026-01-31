@@ -1026,8 +1026,8 @@ const Quotations: React.FC = () => {
                             )
                         }
 
-                        <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
-                            <div>
+                        <div className="p-6 border-t border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-center shrink-0 gap-4 md:gap-0">
+                            <div className="w-full md:w-auto text-center md:text-left">
                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Estimado</p>
                                 <p className="text-2xl font-black text-indigo-600">
                                     $ {formItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0).toLocaleString()}
@@ -1036,7 +1036,7 @@ const Quotations: React.FC = () => {
                             <button
                                 onClick={() => setIsInteractionModalOpen(true)}
                                 disabled={submitting}
-                                className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold flex items-center shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                                className="w-full md:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
                             >
                                 <CheckCircle2 size={20} className="mr-2" />
                                 {submitting ? 'Confirmando...' : 'Confirmar Cotización'}
