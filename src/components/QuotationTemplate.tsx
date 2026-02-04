@@ -66,39 +66,33 @@ const QuotationTemplate: React.FC<Props> = ({ data, onClose }) => {
         return "MONTO TOTAL EN PESOS";
     };
 
-    const handleShare = async () => {
-        const shareText = `Estimado(a) ${data.clientName},\n\nLe adjunto la cotización Folio Nº ${data.folio} de 3Dental Digital.\n\nTotal: $${total.toLocaleString()}\nVendedor: ${data.sellerName}\n\nGracias por su confianza.`;
-
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: `Cotización Folio ${data.folio} - 3Dental`,
-                    text: shareText,
-                    url: window.location.href
-                });
-            } catch (err) {
-                console.error('Error sharing:', err);
-            }
-        } else {
-            const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-            window.open(waUrl, '_blank');
-        }
-    };
-
-    const handleDownloadPDF = async () => {
-        if (!contentRef.current) return;
-        setGeneratingPdf(true);
+    const generatePdfBlob = async (): Promise<Blob | null> => {
+        if (!contentRef.current) return null;
 
         try {
-            const canvas = await html2canvas(contentRef.current, {
-                scale: 1.5, // Optimized for file size / quality balance
+            // Mobile PDF fix: create a temporary container with fixed width to ensure desktop layout
+            const originalElement = contentRef.current;
+            const width = 1000; // Fixed width for consistent A4 aspect ratio regardless of viewport
+
+            // Inline styles for high quality capture
+            const canvas = await html2canvas(originalElement, {
+                scale: 2, // Higher scale for better quality
                 useCORS: true,
                 logging: false,
-                backgroundColor: '#ffffff'
+                backgroundColor: '#ffffff',
+                windowWidth: width, // Force desktop width for capture
+                width: width,
+                onclone: (clonedDoc) => {
+                    // Find the cloned element and force its width
+                    const clonedElement = clonedDoc.querySelector('[ref-content-container]');
+                    if (clonedElement instanceof HTMLElement) {
+                        clonedElement.style.width = `${width}px`;
+                        clonedElement.style.padding = '40px';
+                    }
+                }
             });
 
-            // Use JPEG with 0.8 quality for massive size reduction compared to PNG
-            const imgData = canvas.toDataURL('image/jpeg', 0.8);
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
             const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
@@ -109,11 +103,64 @@ const QuotationTemplate: React.FC<Props> = ({ data, onClose }) => {
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
             pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
-            pdf.save(`Cotizacion_Folio_${data.folio}.pdf`);
-
+            return pdf.output('blob');
         } catch (error) {
-            console.error("Error generating PDF:", error);
-            alert("Error generando PDF. Intente imprimir como PDF.");
+            console.error("Error generating PDF Blob:", error);
+            return null;
+        }
+    };
+
+    const handleShare = async () => {
+        const shareText = `Estimado(a) ${data.clientName},\n\nLe adjunto la cotización Folio Nº ${data.folio} de 3Dental Digital.\n\nTotal: $${total.toLocaleString()}\nVendedor: ${data.sellerName}\n\nGracias por su confianza.`;
+        const fileName = `Cotizacion_Folio_${data.folio}.pdf`;
+
+        setGeneratingPdf(true);
+        try {
+            const pdfBlob = await generatePdfBlob();
+
+            if (pdfBlob && navigator.canShare && navigator.canShare({ files: [new File([pdfBlob], fileName, { type: 'application/pdf' })] })) {
+                const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+                await navigator.share({
+                    files: [file],
+                    title: `Cotización Folio ${data.folio} - 3Dental`,
+                    text: shareText,
+                });
+            } else if (navigator.share) {
+                // Fallback to text sharing if files not supported but share is available
+                await navigator.share({
+                    title: `Cotización Folio ${data.folio} - 3Dental`,
+                    text: shareText,
+                    url: window.location.href
+                });
+            } else {
+                // Fallback to WhatsApp link (no file, just text)
+                const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+                window.open(waUrl, '_blank');
+            }
+        } catch (err) {
+            console.error('Error sharing:', err);
+        } finally {
+            setGeneratingPdf(false);
+        }
+    };
+
+    const handleDownloadPDF = async () => {
+        setGeneratingPdf(true);
+        try {
+            const pdfBlob = await generatePdfBlob();
+            if (pdfBlob) {
+                const url = URL.createObjectURL(pdfBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Cotizacion_Folio_${data.folio}.pdf`;
+                link.click();
+                URL.revokeObjectURL(url);
+            } else {
+                alert("Error generando PDF. Intente imprimir como PDF.");
+            }
+        } catch (error) {
+            console.error("Error in handleDownloadPDF:", error);
+            alert("Error descargando PDF.");
         } finally {
             setGeneratingPdf(false);
         }
@@ -130,30 +177,26 @@ const QuotationTemplate: React.FC<Props> = ({ data, onClose }) => {
             >
 
                 {/* Actions Header (Not part of print) */}
-                <div className="bg-gray-100 p-4 border-b flex justify-between items-center print:hidden">
-                    <h3 className="font-bold text-gray-700">Visualización de Cotización</h3>
+                <div className="bg-gray-100 p-4 border-b flex justify-between items-center print:hidden shrink-0">
+                    <h3 className="font-bold text-gray-700 hidden md:block">Visualización de Cotización</h3>
 
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2 md:space-x-4 w-full md:w-auto justify-between">
                         <button
                             onClick={handleShare}
-                            className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-bold hover:bg-green-600 transition-all"
+                            disabled={generatingPdf}
+                            className="flex-1 md:flex-none flex items-center justify-center px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-bold hover:bg-green-600 transition-all disabled:opacity-50"
                         >
-                            <Share2 size={16} className="mr-2" /> Compartir
+                            {generatingPdf ? <Loader2 size={16} className="animate-spin mr-2" /> : <Share2 size={16} className="mr-2" />} Compartir
                         </button>
-                        <button onClick={() => window.print()} className="flex items-center px-4 py-2 bg-white border rounded-lg text-sm font-bold hover:bg-gray-50 transition-all">
+                        <button onClick={() => window.print()} className="hidden md:flex items-center px-4 py-2 bg-white border rounded-lg text-sm font-bold hover:bg-gray-50 transition-all">
                             <Printer size={16} className="mr-2" /> Imprimir
                         </button>
                         <button
                             onClick={handleDownloadPDF}
                             disabled={generatingPdf}
-                            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"
+                            className="flex-1 md:flex-none flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"
                         >
-                            {generatingPdf ? (
-                                <Loader2 size={16} className="mr-2 animate-spin" />
-                            ) : (
-                                <Download size={16} className="mr-2" />
-                            )}
-                            PDF
+                            {generatingPdf ? <Loader2 size={16} className="animate-spin mr-2" /> : <Download size={16} className="mr-2" />} PDF
                         </button>
                         <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-all text-gray-400">
                             <X size={20} />
@@ -162,7 +205,12 @@ const QuotationTemplate: React.FC<Props> = ({ data, onClose }) => {
                 </div>
 
                 {/* Print Content */}
-                <div ref={contentRef} className="flex-1 p-12 bg-white text-[11px] font-sans leading-relaxed text-gray-800 print:p-0">
+                <div
+                    ref={contentRef}
+                    // @ts-ignore
+                    ref-content-container="true"
+                    className="flex-1 p-8 md:p-12 bg-white text-[11px] font-sans leading-relaxed text-gray-800 print:p-0"
+                >
 
                     {/* Header Section */}
                     <div className="flex justify-between items-start mb-10">
