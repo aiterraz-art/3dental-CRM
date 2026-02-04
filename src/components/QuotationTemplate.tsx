@@ -70,39 +70,65 @@ const QuotationTemplate: React.FC<Props> = ({ data, onClose }) => {
         if (!contentRef.current) return null;
 
         try {
-            // Mobile PDF fix: create a temporary container with fixed width to ensure desktop layout
-            const originalElement = contentRef.current;
-            const width = 1000; // Fixed width for consistent A4 aspect ratio regardless of viewport
+            // Mobile PDF fix: create a temporary container with fixed width and forced desktop styles
+            const width = 1100; // Increased width to ensure desktop-like proportions
 
-            // Inline styles for high quality capture
-            const canvas = await html2canvas(originalElement, {
-                scale: 2, // Higher scale for better quality
+            const canvas = await html2canvas(contentRef.current, {
+                scale: 2.5, // Even higher quality
                 useCORS: true,
                 logging: false,
                 backgroundColor: '#ffffff',
-                windowWidth: width, // Force desktop width for capture
+                windowWidth: width,
                 width: width,
                 onclone: (clonedDoc) => {
-                    // Find the cloned element and force its width
-                    const clonedElement = clonedDoc.querySelector('[ref-content-container]');
-                    if (clonedElement instanceof HTMLElement) {
-                        clonedElement.style.width = `${width}px`;
-                        clonedElement.style.padding = '40px';
+                    // 1. Force container styles
+                    const container = clonedDoc.querySelector('[ref-content-container]');
+                    if (container instanceof HTMLElement) {
+                        container.style.width = `${width}px`;
+                        container.style.minWidth = `${width}px`;
+                        container.style.maxWidth = `${width}px`;
+                        container.style.padding = '50px';
+                        container.style.margin = '0';
+                        container.style.overflow = 'visible';
+                        container.style.display = 'block';
                     }
+
+                    // 2. Inject CSS to override ALL mobile/responsive classes
+                    const style = clonedDoc.createElement('style');
+                    style.innerHTML = `
+                        * { -webkit-print-color-adjust: exact !important; }
+                        /* Force grid and flex to desktop layouts */
+                        .flex-col { flex-direction: row !important; }
+                        .md\\:flex-row { flex-direction: row !important; }
+                        .grid-cols-1 { grid-template-columns: repeat(12, minmax(0, 1fr)) !important; }
+                        /* Override specific col-spans that might go 12 on mobile */
+                        [class*="col-span-"] { grid-column: span var(--tw-col-span) / span var(--tw-col-span) !important; }
+                        /* Force specific sections to stay grid/flex */
+                        .grid { display: grid !important; }
+                        .flex { display: flex !important; }
+                        /* Ensure no hidden elements for print */
+                        .hidden { display: block !important; }
+                        .md\\:block { display: block !important; }
+                        /* Ensure text sizing is consistent */
+                        .text-sm { font-size: 0.875rem !important; }
+                        .text-xs { font-size: 0.75rem !important; }
+                    `;
+                    clonedDoc.head.appendChild(style);
                 }
             });
 
-            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            const imgData = canvas.toDataURL('image/jpeg', 0.9);
             const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
-                format: 'a4'
+                format: 'a4',
+                compress: true
             });
 
             const imgWidth = 210;
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
             return pdf.output('blob');
         } catch (error) {
             console.error("Error generating PDF Blob:", error);
@@ -111,34 +137,45 @@ const QuotationTemplate: React.FC<Props> = ({ data, onClose }) => {
     };
 
     const handleShare = async () => {
+        // PREVENT default behavior and prepare file
         const shareText = `Estimado(a) ${data.clientName},\n\nLe adjunto la cotización Folio Nº ${data.folio} de 3Dental Digital.\n\nTotal: $${total.toLocaleString()}\nVendedor: ${data.sellerName}\n\nGracias por su confianza.`;
-        const fileName = `Cotizacion_Folio_${data.folio}.pdf`;
+        const fileName = `Cotizacion_3Dental_Folio_${data.folio}.pdf`;
 
         setGeneratingPdf(true);
         try {
             const pdfBlob = await generatePdfBlob();
 
-            if (pdfBlob && navigator.canShare && navigator.canShare({ files: [new File([pdfBlob], fileName, { type: 'application/pdf' })] })) {
-                const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+            if (!pdfBlob) {
+                alert("No se pudo generar el archivo PDF para compartir.");
+                return;
+            }
+
+            const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+            // Check if WE CAN share files (crucial for modern mobile browsers)
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
                     files: [file],
-                    title: `Cotización Folio ${data.folio} - 3Dental`,
-                    text: shareText,
+                    title: `Cotización ${data.folio}`,
+                    text: shareText
                 });
             } else if (navigator.share) {
-                // Fallback to text sharing if files not supported but share is available
+                // FALLBACK: Text only SHARE (NO LINK per request)
                 await navigator.share({
-                    title: `Cotización Folio ${data.folio} - 3Dental`,
-                    text: shareText,
-                    url: window.location.href
+                    title: `Cotización ${data.folio}`,
+                    text: shareText
                 });
             } else {
-                // Fallback to WhatsApp link (no file, just text)
+                // FALLBACK: WhatsApp direct (NO LINK per request)
                 const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
                 window.open(waUrl, '_blank');
             }
         } catch (err) {
             console.error('Error sharing:', err);
+            // Don't alert "AbortError" as it's usually just user canceling the share dialog
+            if (err instanceof Error && err.name !== 'AbortError') {
+                alert("Hubo un error al intentar compartir.");
+            }
         } finally {
             setGeneratingPdf(false);
         }
